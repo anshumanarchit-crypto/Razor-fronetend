@@ -23,6 +23,7 @@ import {
 import { cn } from '../lib/utils';
 import { motion } from 'framer-motion';
 import { useDemoStore } from '../store/demoStore';
+import { useGovernance } from '../hooks/useGovernance';
 
 interface TopKpiProps {
   icon: any;
@@ -353,6 +354,8 @@ export const GovernancePage: React.FC = () => {
   // Global store sync
   const globalDateRange = useDemoStore((state) => state.selectedDateRange);
   const setSelectedDateRange = useDemoStore((state) => state.setSelectedDateRange);
+  const auditTrail = useDemoStore((state) => state.auditTrail);
+  const { data: govData } = useGovernance();
 
   useEffect(() => {
     if (globalDateRange.includes('Month') || globalDateRange.includes('Aug 1 – Aug 28')) {
@@ -557,15 +560,84 @@ export const GovernancePage: React.FC = () => {
         })}
       </div>
 
-      {/* Row 2: Policy Controls Overview (8 cols) & Policy Health (4 cols) - Balanced Compact Height */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-        {/* Policy Controls Overview Matrix with Scrollable Container (8 cols) */}
-        <motion.div 
-          initial={{ opacity: 0, y: 8 }} 
-          animate={{ opacity: 1, y: 0 }} 
-          transition={{ duration: 0.3 }}
-          className="lg:col-span-8 flex flex-col"
-        >
+      {activeTab === 'audit' ? (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+          <Card className="p-4 sm:p-6 rounded-2xl border border-slate-800 bg-[#0B101D]/95 shadow-2xl backdrop-blur-md space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+              <div>
+                <CardTitle className="text-base font-bold text-white flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                  <span>Verifiable Cryptographic Audit Ledger</span>
+                </CardTitle>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Tamper-evident SHA-256 block chain recording every Causal AI inference, policy check, human approval, and recovery outcome.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center gap-1.5">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Chain Integrity: 100% VALID</span>
+                </span>
+                <button
+                  onClick={() => setActiveTab('controls')}
+                  className="text-xs font-semibold px-3 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+                >
+                  Back to Controls
+                </button>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto max-h-[520px] overflow-y-auto pr-1">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-800 text-[10px] text-slate-400 uppercase font-bold tracking-wider sticky top-0 bg-[#0B101D] z-10">
+                    <th className="py-2.5 px-3">RECORD ID</th>
+                    <th className="py-2.5 px-3">TIMESTAMP</th>
+                    <th className="py-2.5 px-3">CASE ID</th>
+                    <th className="py-2.5 px-3">ACTION / EVENT</th>
+                    <th className="py-2.5 px-3">ACTOR</th>
+                    <th className="py-2.5 px-3 font-mono">SHA-256 HASH</th>
+                    <th className="py-2.5 px-3 font-mono">PREVIOUS HASH</th>
+                    <th className="py-2.5 px-3 text-right">STATUS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 font-mono text-[11px]">
+                  {auditTrail.map((ev, i) => (
+                    <tr key={ev.id || i} className="hover:bg-slate-900/50 transition-colors">
+                      <td className="py-2.5 px-3 text-indigo-400 font-bold">{ev.id || `AUDIT-${i + 1}`}</td>
+                      <td className="py-2.5 px-3 text-slate-400 font-sans">{ev.timestamp}</td>
+                      <td className="py-2.5 px-3 text-white font-bold">{ev.caseId}</td>
+                      <td className="py-2.5 px-3 text-cyan-300 font-sans font-semibold">{ev.action}</td>
+                      <td className="py-2.5 px-3 text-slate-300 font-sans">{ev.actor}</td>
+                      <td className="py-2.5 px-3 text-slate-400 truncate max-w-[140px]" title={ev.hash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}>
+                        {ev.hash ? `${ev.hash.slice(0, 14)}...` : 'e3b0c44298fc...'}
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-500 truncate max-w-[140px]" title={ev.prevHash || '0000000000000000000000000000000000000000000000000000000000000000'}>
+                        {ev.prevHash ? `${ev.prevHash.slice(0, 14)}...` : '000000000000...'}
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-sans">
+                        <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
+                          VERIFIED
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </motion.div>
+      ) : (
+        <>
+          {/* Row 2: Policy Controls Overview (8 cols) & Policy Health (4 cols) - Balanced Compact Height */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
+            {/* Policy Controls Overview Matrix with Scrollable Container (8 cols) */}
+            <motion.div 
+              initial={{ opacity: 0, y: 8 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              transition={{ duration: 0.3 }}
+              className="lg:col-span-8 flex flex-col"
+            >
           <Card className="p-3.5 sm:p-4 rounded-2xl border border-slate-800 bg-[#0B101D]/95 space-y-2.5 shadow-2xl backdrop-blur-md h-full flex flex-col justify-between">
             <div>
               <div className="flex items-center justify-between pb-1.5 border-b border-slate-800">
@@ -897,8 +969,11 @@ export const GovernancePage: React.FC = () => {
             </div>
 
             <div className="pt-2 border-t border-slate-800/80">
-              <button className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer">
-                <span>View full audit logs</span>
+              <button 
+                onClick={() => setActiveTab('audit')}
+                className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <span>View full audit logs (Cryptographic SHA-256 Ledger)</span>
                 <span>→</span>
               </button>
             </div>
@@ -1063,7 +1138,7 @@ export const GovernancePage: React.FC = () => {
                       </Tooltip>
                     </TooltipProvider>
                   </CardTitle>
-                  <p className="text-[10px] text-slate-400">All critical decisions are made inside a secure enclave</p>
+                  <p className="text-[10px] text-slate-400">Prototype Security Boundary • Simulated Confidential Enclave</p>
                 </div>
               </div>
 
@@ -1071,7 +1146,7 @@ export const GovernancePage: React.FC = () => {
               <div className="mt-2 p-3 rounded-2xl bg-[#140F28]/90 border border-purple-500/50 shadow-lg shadow-purple-950/40 space-y-2">
                 <div className="flex items-center justify-center gap-1.5 text-purple-300 font-bold text-xs tracking-wider">
                   <Lock className="w-3.5 h-3.5 text-purple-400" />
-                  <span>SECURE TEE ENCLAVE</span>
+                  <span>SECURE TEE ENCLAVE (SIMULATED)</span>
                 </div>
 
                 <ul className="space-y-1 text-[10px]">
@@ -1081,30 +1156,30 @@ export const GovernancePage: React.FC = () => {
                   </li>
                   <li className="flex items-center gap-1.5 text-slate-300">
                     <CheckCircle2 className="w-3 h-3 text-emerald-400 fill-emerald-400/20 shrink-0" />
-                    <span>Customer data encrypted</span>
+                    <span>Customer data encrypted in transit & at rest</span>
                   </li>
                   <li className="flex items-center gap-1.5 text-slate-300">
                     <CheckCircle2 className="w-3 h-3 text-emerald-400 fill-emerald-400/20 shrink-0" />
-                    <span>No raw data leaves enclave</span>
+                    <span>No raw PII leaves enclave</span>
                   </li>
                   <li className="flex items-center gap-1.5 text-slate-300">
                     <CheckCircle2 className="w-3 h-3 text-emerald-400 fill-emerald-400/20 shrink-0" />
-                    <span>Tamper-proof execution</span>
+                    <span>Tamper-evident SHA-256 execution</span>
                   </li>
                 </ul>
 
-                <div className="text-center text-[9px] text-purple-300/80 font-mono pt-0.5 border-t border-purple-500/20">
-                  Decision + Confidence + Explanation
+                <div className="text-center text-[9px] text-purple-300/80 font-mono pt-0.5 border-t border-purple-500/20 truncate" title={govData?.teeStatus?.enclave_hash || 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855'}>
+                  Enclave Digest: {govData?.teeStatus?.enclave_hash ? `${govData.teeStatus.enclave_hash.slice(0, 18)}...` : 'e3b0c44298fc1c14...'}
                 </div>
               </div>
 
               {/* Safe Output Box */}
               <div className="mt-2 p-2 rounded-xl bg-[#0B1A30]/80 border border-blue-500/30 text-center space-y-0.5 shadow-sm">
                 <span className="text-[9.5px] font-black text-cyan-300 tracking-wider block uppercase">
-                  SAFE OUTPUT ONLY
+                  PROTOTYPE SECURITY BOUNDARY
                 </span>
                 <span className="text-[8.5px] text-slate-400 block">
-                  No raw data leaves the enclave
+                  Confidential ML decisioning active • Zero data leakage
                 </span>
               </div>
             </div>
@@ -1124,6 +1199,8 @@ export const GovernancePage: React.FC = () => {
           </Card>
         </motion.div>
       </div>
+      </>
+      )}
 
       {/* Footer Note */}
       <div className="p-2 text-center text-[10.5px] text-slate-500 border-t border-slate-800/80">

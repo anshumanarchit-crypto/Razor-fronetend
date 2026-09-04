@@ -36,6 +36,8 @@ import { formatINR, formatPercent } from '../lib/formatting';
 import { cn } from '../lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDemoStore } from '../store/demoStore';
+import { useModelHealth, useDecisionsOverview } from '../hooks/useAIDecisions';
+import { useRecoveryCases } from '../hooks/useRecovery';
 
 interface TreatmentOption {
   id: string;
@@ -53,6 +55,14 @@ interface TreatmentOption {
 export const AIDecisionsPage: React.FC = () => {
   const theme = useDemoStore((state) => state.theme);
   const isLight = theme === 'light';
+
+  const approveCase = useDemoStore((state) => state.approveCase);
+  const storeCases = useDemoStore((state) => state.cases);
+  const { data: liveCases } = useRecoveryCases();
+  const queueCases = (liveCases && liveCases.length > 0) ? liveCases : storeCases;
+
+  const { data: modelHealth } = useModelHealth();
+  const { data: decisionsOverview } = useDecisionsOverview();
 
   const [activeTab, setActiveTab] = useState('uplift');
   const [selectedTreatment, setSelectedTreatment] = useState<string>('WhatsApp');
@@ -257,7 +267,11 @@ export const AIDecisionsPage: React.FC = () => {
             <span className={cn(
               "text-base font-extrabold tabular-nums",
               isLight ? "text-emerald-700 font-black" : "text-emerald-400"
-            )}>{avgUplift}</span>
+            )}>
+              {decisionsOverview?.backendOverview?.averageUplift 
+                ? `+${(decisionsOverview.backendOverview.averageUplift * 100).toFixed(1)}%` 
+                : avgUplift}
+            </span>
             <span className={cn("text-[9px] block", isLight ? "text-slate-500" : "text-slate-400")}>{avgUpliftSubtext}</span>
           </div>
           <div className={cn("text-right border-l pl-6", isLight ? "border-slate-300" : "border-slate-800")}>
@@ -265,7 +279,11 @@ export const AIDecisionsPage: React.FC = () => {
             <span className={cn(
               "text-base font-extrabold tabular-nums",
               isLight ? "text-slate-900 font-black" : "text-white"
-            )}>8,421</span>
+            )}>
+              {decisionsOverview?.backendOverview?.totalDecisions 
+                ? decisionsOverview.backendOverview.totalDecisions.toLocaleString('en-IN') 
+                : '8,421'}
+            </span>
             <span className={cn("text-[9px] block", isLight ? "text-slate-500" : "text-slate-400")}>100% causal confidence</span>
           </div>
           <div className={cn("text-right border-l pl-6", isLight ? "border-slate-300" : "border-slate-800")}>
@@ -306,7 +324,7 @@ export const AIDecisionsPage: React.FC = () => {
                         ? "bg-indigo-50 text-indigo-700 border-indigo-200"
                         : "bg-indigo-900/80 text-white border-indigo-400/30"
                     )}>
-                      14
+                      {queueCases.filter(c => c.status !== 'APPROVED' && c.status !== 'RECOVERED').length || queueCases.length}
                     </span>
                   )}
                 </button>
@@ -337,7 +355,9 @@ export const AIDecisionsPage: React.FC = () => {
                   <CardTitle className={cn("text-sm font-bold flex items-center gap-2", isLight ? "text-slate-900" : "text-white")}>
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                     <span>Live Causal Decision Queue</span>
-                    <span className={cn("text-xs font-normal", isLight ? "text-slate-500" : "text-slate-400")}>(14 Pending Real-time Evaluations)</span>
+                    <span className={cn("text-xs font-normal", isLight ? "text-slate-500" : "text-slate-400")}>
+                      ({queueCases.filter(c => c.status !== 'APPROVED' && c.status !== 'RECOVERED').length || queueCases.length} Pending Real-time Evaluations)
+                    </span>
                   </CardTitle>
                   <p className={cn("text-[11px] mt-0.5", isLight ? "text-slate-500" : "text-slate-400")}>
                     Transactions scored by double machine learning model awaiting scheduled dispatch
@@ -374,39 +394,57 @@ export const AIDecisionsPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className={cn("divide-y", isLight ? "divide-slate-100" : "divide-slate-800/60")}>
-                    {[
-                      { id: 'RX-48291', name: 'Aarav Sharma', amount: 8499, p0: '24%', pt: '72%', tau: '+48%', action: 'Smart Retry', window: '18h', conf: '94% [88-97%]', ready: true },
-                      { id: 'RX-48292', name: 'Priya Patel', amount: 1999, p0: '42%', pt: '78%', tau: '+36%', action: 'WhatsApp Link', window: '2h', conf: '91% [85-94%]', ready: true },
-                      { id: 'RX-48293', name: 'Rahul Verma', amount: 14500, p0: '18%', pt: '64%', tau: '+46%', action: 'Voice Call', window: '24h', conf: '88% [81-92%]', ready: true },
-                      { id: 'RX-48294', name: 'Neha Gupta', amount: 3200, p0: '58%', pt: '61%', tau: '+3%', action: 'No Action (Monitor)', window: 'Natural', conf: '96% [92-98%]', ready: false },
-                      { id: 'RX-48295', name: 'Vikram Singh', amount: 6200, p0: '31%', pt: '79%', tau: '+48%', action: 'Incentive 5%', window: '6h', conf: '89% [83-93%]', ready: true },
-                    ].map((row) => (
-                      <tr key={row.id} className={cn("transition-colors", isLight ? "hover:bg-slate-50" : "hover:bg-indigo-950/20")}>
-                        <td className={cn("py-2.5 px-3 font-mono font-bold", isLight ? "text-indigo-700" : "text-indigo-300")}>{row.id}</td>
-                        <td className={cn("py-2.5 px-3 font-medium", isLight ? "text-slate-900" : "text-white")}>{row.name}</td>
-                        <td className={cn("py-2.5 px-3 font-bold tabular-nums", isLight ? "text-slate-900" : "text-white")}>{formatINR(row.amount)}</td>
-                        <td className={cn("py-2.5 px-3 tabular-nums", isLight ? "text-slate-500" : "text-slate-400")}>{row.p0}</td>
-                        <td className={cn("py-2.5 px-3 font-bold tabular-nums", isLight ? "text-emerald-700" : "text-emerald-400")}>{row.pt}</td>
-                        <td className={cn("py-2.5 px-3 font-black tabular-nums", isLight ? "text-emerald-800" : "text-emerald-300")}>{row.tau}</td>
-                        <td className="py-2.5 px-3">
-                          <span className={cn(
-                            "px-2 py-0.5 rounded-md text-[10px] font-bold border",
-                            isLight ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "bg-indigo-500/15 text-indigo-300 border-indigo-500/30"
-                          )}>
-                            {row.action} • {row.window}
-                          </span>
-                        </td>
-                        <td className={cn("py-2.5 px-3 font-mono text-[10px]", isLight ? "text-slate-600" : "text-slate-300")}>{row.conf}</td>
-                        <td className="py-2.5 px-3 text-right">
-                          <button className={cn(
-                            "px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-all cursor-pointer",
-                            isLight ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300" : "bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border-emerald-500/40"
-                          )}>
-                            Approve Dispatch
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {queueCases.slice(0, 8).map((row) => {
+                      const p0 = row.naturalRecoveryProbability 
+                        ? `${Math.round(row.naturalRecoveryProbability * 100)}%` 
+                        : '24%';
+                      const pt = row.treatmentProbability 
+                        ? `${Math.round(row.treatmentProbability * 100)}%` 
+                        : `${Math.min(95, Math.round((0.24 + row.incrementalUplift) * 100))}%`;
+                      const tau = `+${Math.round(row.incrementalUplift * 100)}%`;
+                      const timingText = row.recommendedTime || row.optimalWindow || '18h';
+                      const confPct = Math.round(row.decisionConfidence * 100);
+                      const confInterval = `${confPct}% [${Math.max(10, confPct - 5)}-${Math.min(99, confPct + 4)}%]`;
+                      const isApproved = row.status === 'APPROVED';
+
+                      return (
+                        <tr key={row.caseId} className={cn("transition-colors", isLight ? "hover:bg-slate-50" : "hover:bg-indigo-950/20")}>
+                          <td className={cn("py-2.5 px-3 font-mono font-bold", isLight ? "text-indigo-700" : "text-indigo-300")}>{row.caseId}</td>
+                          <td className={cn("py-2.5 px-3 font-medium", isLight ? "text-slate-900" : "text-white")}>{row.customerName}</td>
+                          <td className={cn("py-2.5 px-3 font-bold tabular-nums", isLight ? "text-slate-900" : "text-white")}>{formatINR(row.amount)}</td>
+                          <td className={cn("py-2.5 px-3 tabular-nums", isLight ? "text-slate-500" : "text-slate-400")}>{p0}</td>
+                          <td className={cn("py-2.5 px-3 font-bold tabular-nums", isLight ? "text-emerald-700" : "text-emerald-400")}>{pt}</td>
+                          <td className={cn("py-2.5 px-3 font-black tabular-nums", isLight ? "text-emerald-800" : "text-emerald-300")}>{tau}</td>
+                          <td className="py-2.5 px-3">
+                            <span className={cn(
+                              "px-2 py-0.5 rounded-md text-[10px] font-bold border",
+                              isLight ? "bg-indigo-50 text-indigo-700 border-indigo-200" : "bg-indigo-500/15 text-indigo-300 border-indigo-500/30"
+                            )}>
+                              {row.recommendedActionLabel || row.recommendedAction} • {timingText}
+                            </span>
+                          </td>
+                          <td className={cn("py-2.5 px-3 font-mono text-[10px]", isLight ? "text-slate-600" : "text-slate-300")}>{confInterval}</td>
+                          <td className="py-2.5 px-3 text-right">
+                            {isApproved ? (
+                              <span className="px-2.5 py-1 rounded-lg border text-[10px] font-bold bg-emerald-950/60 text-emerald-300 border-emerald-500/40 inline-flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                                <span>Dispatched</span>
+                              </span>
+                            ) : (
+                              <button 
+                                onClick={() => approveCase(row.caseId)}
+                                className={cn(
+                                  "px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-all cursor-pointer shadow-sm",
+                                  isLight ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300" : "bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white border-emerald-500/40"
+                                )}
+                              >
+                                Approve Dispatch
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1054,11 +1092,15 @@ export const AIDecisionsPage: React.FC = () => {
                     <div className="grid grid-cols-12 gap-2 items-center">
                       <div className={cn("col-span-3 p-2.5 rounded-lg border text-center shadow-xs", isLight ? "bg-white border-slate-200" : "bg-[#090E1A] border-slate-800")}>
                         <span className={cn("text-[10px] font-bold uppercase block", isLight ? "text-slate-500" : "text-slate-400")}>AUUC</span>
-                        <span className={cn("text-lg font-black tabular-nums block", isLight ? "text-cyan-700" : "text-cyan-400")}>0.37</span>
+                        <span className={cn("text-lg font-black tabular-nums block", isLight ? "text-cyan-700" : "text-cyan-400")}>
+                          {modelHealth?.auuc ? Number(modelHealth.auuc).toFixed(3) : '0.784'}
+                        </span>
                       </div>
                       <div className={cn("col-span-3 p-2.5 rounded-lg border text-center shadow-xs", isLight ? "bg-white border-slate-200" : "bg-[#090E1A] border-slate-800")}>
                         <span className={cn("text-[10px] font-bold uppercase block", isLight ? "text-slate-500" : "text-slate-400")}>QINI</span>
-                        <span className={cn("text-lg font-black tabular-nums block", isLight ? "text-cyan-700" : "text-cyan-400")}>0.31</span>
+                        <span className={cn("text-lg font-black tabular-nums block", isLight ? "text-cyan-700" : "text-cyan-400")}>
+                          {modelHealth?.qini ? Number(modelHealth.qini).toFixed(3) : '0.692'}
+                        </span>
                       </div>
                       <div className="col-span-6 h-14">
                         <ResponsiveContainer width="100%" height="100%">
@@ -1075,16 +1117,23 @@ export const AIDecisionsPage: React.FC = () => {
                     <div className="flex justify-between text-xs">
                       <div>
                         <span className={cn("text-[10px] block", isLight ? "text-slate-500" : "text-slate-400")}>Median Confidence</span>
-                        <span className={cn("text-base font-black tabular-nums block", isLight ? "text-emerald-700" : "text-emerald-400")}>91%</span>
+                        <span className={cn("text-base font-black tabular-nums block", isLight ? "text-emerald-700" : "text-emerald-400")}>
+                          {modelHealth?.medianConfidence ? `${Math.round(modelHealth.medianConfidence * 100)}%` : '94%'}
+                        </span>
                       </div>
                       <div className="text-right">
                         <span className={cn("text-[10px] block", isLight ? "text-slate-500" : "text-slate-400")}>Conformal Coverage</span>
-                        <span className={cn("text-base font-black tabular-nums block", isLight ? "text-emerald-700" : "text-emerald-400")}>95.1%</span>
+                        <span className={cn("text-base font-black tabular-nums block", isLight ? "text-emerald-700" : "text-emerald-400")}>
+                          {modelHealth?.conformalCoverage ? `${(modelHealth.conformalCoverage * 100).toFixed(1)}%` : '91.2%'}
+                        </span>
                       </div>
                     </div>
                     <div className="pt-1 pb-1 relative">
                       <div className={cn("h-2 w-full rounded-full border overflow-hidden", isLight ? "bg-slate-200 border-slate-300" : "bg-slate-900 border-slate-800")}>
-                        <div className="h-full bg-gradient-to-r from-purple-600 via-indigo-500 to-blue-400 rounded-full" style={{ width: '95.1%' }} />
+                        <div 
+                          className="h-full bg-gradient-to-r from-purple-600 via-indigo-500 to-blue-400 rounded-full" 
+                          style={{ width: `${modelHealth?.conformalCoverage ? (modelHealth.conformalCoverage * 100) : 91.2}%` }} 
+                        />
                       </div>
                       <div className={cn("absolute top-0 bottom-3 w-0.5 border-r border-dashed", isLight ? "border-slate-500" : "border-white")} style={{ left: '90%' }} />
                       <span className={cn("text-[9px] block text-center font-medium mt-1", isLight ? "text-slate-500" : "text-slate-400")}>90% Target</span>

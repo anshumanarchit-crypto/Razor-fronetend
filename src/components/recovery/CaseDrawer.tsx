@@ -23,6 +23,7 @@ import {
   UserCheck
 } from 'lucide-react';
 import { useDemoStore } from '../../store/demoStore';
+import { useCaseDetail } from '../../hooks/useRecovery';
 import { Button } from '../ui/Button';
 import { StatusBadge } from '../shared/StatusBadge';
 import { formatINR, formatPercent } from '../../lib/formatting';
@@ -47,10 +48,13 @@ export const CaseDrawer: React.FC = () => {
   const [copied, setCopied] = useState(false);
   const [selectedActionPreview, setSelectedActionPreview] = useState<string | null>(null);
 
+  // Unconditional hook call according to React Rules of Hooks
+  const { data: liveDetail } = useCaseDetail(isCaseDrawerOpen && selectedCaseId ? selectedCaseId : null);
+
   if (!isCaseDrawerOpen || !selectedCaseId) return null;
 
   const currentCase = cases.find((c) => c.caseId === selectedCaseId) || cases[0];
-  const detail = caseDetails[selectedCaseId] || caseDetails['RX-48291'];
+  const detail = liveDetail || caseDetails[selectedCaseId] || caseDetails['RX-48291'];
 
   const handleCopyId = () => {
     navigator.clipboard.writeText(currentCase.caseId);

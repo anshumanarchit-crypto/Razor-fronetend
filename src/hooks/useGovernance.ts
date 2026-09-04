@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { governanceService } from '../services/mock/governanceService';
+import { governanceService } from '../services/governanceService';
 import { useDemoStore } from '../store/demoStore';
 
 export function useGovernance() {

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { analyticsService } from '../services/mock/analyticsService';
+import { analyticsService } from '../services/analyticsService';
 import { useDemoStore } from '../store/demoStore';
 
 export function useAnalytics() {

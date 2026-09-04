@@ -1,0 +1,42 @@
+{
+  "active_production_version": "v1.0.0",
+  "registered_models": [
+    {
+      "model_name": "wapsi_t_learner",
+      "version": "v1.0.0",
+      "filename": "wapsi_t_learner_v1.0.0.joblib",
+      "artifact_path": "models\\wapsi_t_learner_v1.0.0.joblib",
+      "registered_at": "2026-08-30T11:10:38.643903+00:00",
+      "model_type": "MultiActionTLearner",
+      "training_rows": 35000,
+      "random_seed": 42,
+      "metrics": {
+        "no_action": {
+          "val_auc": 0.7672,
+          "val_log_loss": 0.2841
+        },
+        "retry_only": {
+          "val_auc": 0.8271,
+          "val_log_loss": 0.4735
+        },
+        "whatsapp_nudge": {
+          "val_auc": 0.7484,
+          "val_log_loss": 0.5038
+        },
+        "voice_call": {
+          "val_auc": 0.8864,
+          "val_log_loss": 0.2756
+        },
+        "email": {
+          "val_auc": 0.7164,
+          "val_log_loss": 0.4916
+        },
+        "incentive_link": {
+          "val_auc": 0.7253,
+          "val_log_loss": 0.5936
+        }
+      },
+      "is_production": true
+    }
+  ]
+}

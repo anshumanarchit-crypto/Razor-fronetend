@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { recoveryService } from '../services/mock/recoveryService';
+import { recoveryService } from '../services/recoveryService';
 import { useDemoStore } from '../store/demoStore';
 
 export function useRecoveryCases(domain?: string, status?: string, search?: string) {

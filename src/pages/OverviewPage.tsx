@@ -778,7 +778,7 @@ export const OverviewPage: React.FC = () => {
                       strokeWidth={2}
                       isAnimationActive={true}
                     >
-                      {domains.map((entry, index) => (
+                      {domains.map((entry: any, index: number) => (
                         <Cell key={`cell-${index}`} fill={entry.color} />
                       ))}
                     </Pie>
@@ -886,7 +886,7 @@ export const OverviewPage: React.FC = () => {
               </div>
 
               <div className="mt-3 space-y-2 text-xs">
-                {failureReasons.map((r, i) => (
+                {failureReasons.map((r: any, i: number) => (
                   <div key={i} className="space-y-1">
                     <div className="flex justify-between text-[11px]">
                       <span className="text-slate-300 truncate max-w-[130px]">{r.reason}</span>

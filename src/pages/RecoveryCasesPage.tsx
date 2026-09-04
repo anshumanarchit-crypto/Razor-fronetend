@@ -25,6 +25,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { useDemoStore } from '../store/demoStore';
+import { useRecoveryCases } from '../hooks/useRecovery';
 import { formatINR } from '../lib/formatting';
 import { cn } from '../lib/utils';
 import { RecoveryCase } from '../types';
@@ -365,23 +366,27 @@ export const RecoveryCasesPage: React.FC = () => {
 
   const openCaseDrawer = useDemoStore((state) => state.openCaseDrawer);
   const selectedCaseId = useDemoStore((state) => state.selectedCaseId);
+  const storeCases = useDemoStore((state) => state.cases);
   const theme = useDemoStore((state) => state.theme);
+
+  const { data: liveCases, isLoading } = useRecoveryCases(selectedDomain, activeStatusTab, searchQuery);
+  const activeDataset = (liveCases && liveCases.length > 0) ? liveCases : (storeCases && storeCases.length > 0) ? storeCases : richLedgerDataset;
 
   // Dynamic Status Tab Counts computed from exact entries
   const statusCounts = useMemo(() => {
     return {
-      All: richLedgerDataset.length,
-      Detected: richLedgerDataset.filter(c => c.status === 'DETECTED').length,
-      Scored: richLedgerDataset.filter(c => c.status === 'SCORED').length,
-      Ready: richLedgerDataset.filter(c => c.status === 'READY').length,
-      Approved: richLedgerDataset.filter(c => c.status === 'APPROVED').length,
-      Actioned: richLedgerDataset.filter(c => c.status === 'ACTIONED').length,
-      Recovered: richLedgerDataset.filter(c => c.status === 'RECOVERED').length,
-      Failed: richLedgerDataset.filter(c => c.status === 'FAILED').length,
-      Escalated: richLedgerDataset.filter(c => c.status === 'ESCALATED').length,
-      Monitoring: richLedgerDataset.filter(c => c.status === 'MONITORING' || c.recommendedAction === 'NO_ACTION').length,
+      All: activeDataset.length,
+      Detected: activeDataset.filter(c => c.status === 'DETECTED').length,
+      Scored: activeDataset.filter(c => c.status === 'SCORED').length,
+      Ready: activeDataset.filter(c => c.status === 'READY').length,
+      Approved: activeDataset.filter(c => c.status === 'APPROVED').length,
+      Actioned: activeDataset.filter(c => c.status === 'ACTIONED').length,
+      Recovered: activeDataset.filter(c => c.status === 'RECOVERED').length,
+      Failed: activeDataset.filter(c => c.status === 'FAILED').length,
+      Escalated: activeDataset.filter(c => c.status === 'ESCALATED').length,
+      Monitoring: activeDataset.filter(c => c.status === 'MONITORING' || c.recommendedAction === 'NO_ACTION').length,
     };
-  }, []);
+  }, [activeDataset]);
 
   const statusTabs = useMemo(() => [
     { label: 'All', count: statusCounts['All'] || 0, tooltip: 'Entire ledger of all transaction attempts' },
@@ -398,7 +403,7 @@ export const RecoveryCasesPage: React.FC = () => {
 
   // Dynamic Filtering Logic
   const filteredCases = useMemo(() => {
-    return richLedgerDataset.filter((c) => {
+    return activeDataset.filter((c) => {
       // 1. Status Tab Filter
       if (activeStatusTab !== 'All') {
         if (activeStatusTab === 'Monitoring') {

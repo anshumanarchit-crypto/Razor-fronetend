@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar, 
   Filter, 
@@ -12,11 +12,13 @@ import {
   User, 
   Sliders,
   Sun,
-  Moon
+  Moon,
+  Activity
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { useDemoStore } from '../../store/demoStore';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/Tooltip';
+import { apiClient, BackendConnectionStatus, HealthStatusResponse } from '../../services/api/apiClient';
 
 interface TopbarProps {
   title?: string;
@@ -39,6 +41,26 @@ export const Topbar: React.FC<TopbarProps> = ({ title, subtitle, showSearch = tr
   const toggleTheme = useDemoStore((state) => state.toggleTheme);
 
   const [showNotificationMenu, setShowNotificationMenu] = useState(false);
+  const [backendStatus, setBackendStatus] = useState<BackendConnectionStatus>(apiClient.getStatus());
+  const [healthInfo, setHealthInfo] = useState<HealthStatusResponse | null>(apiClient.getLastHealth());
+
+  useEffect(() => {
+    const unsub = apiClient.onStatusChange((st) => {
+      setBackendStatus(st);
+      setHealthInfo(apiClient.getLastHealth());
+    });
+
+    const timer = setInterval(() => {
+      apiClient.checkHealth().then((h) => {
+        if (h) setHealthInfo(h);
+      });
+    }, 6000);
+
+    return () => {
+      unsub();
+      clearInterval(timer);
+    };
+  }, []);
 
   return (
     <header className="h-16 bg-[#0B0F19]/90 backdrop-blur-md border-b border-slate-800/80 px-6 flex items-center justify-between sticky top-0 z-30 select-none">
@@ -90,6 +112,69 @@ export const Topbar: React.FC<TopbarProps> = ({ title, subtitle, showSearch = tr
             </TooltipTrigger>
             <TooltipContent side="bottom" className="bg-slate-900 border border-slate-700 text-xs">
               <p>{activeFilterCount} Active causal & policy filters — click to edit</p>
+            </TooltipContent>
+          </Tooltip>
+
+          {/* Live Causal Engine Status Badge */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => apiClient.checkHealth()}
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold transition-all shadow-sm cursor-pointer ${
+                  backendStatus === 'LIVE'
+                    ? 'bg-emerald-950/40 border-emerald-500/50 text-emerald-300 hover:bg-emerald-900/50'
+                    : backendStatus === 'STARTING'
+                    ? 'bg-amber-950/40 border-amber-500/50 text-amber-300 hover:bg-amber-900/50'
+                    : 'bg-rose-950/40 border-rose-500/50 text-rose-300 hover:bg-rose-900/50'
+                }`}
+              >
+                <span className="relative flex h-2 w-2">
+                  {backendStatus === 'LIVE' && (
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                  )}
+                  <span
+                    className={`relative inline-flex rounded-full h-2 w-2 ${
+                      backendStatus === 'LIVE'
+                        ? 'bg-emerald-400'
+                        : backendStatus === 'STARTING'
+                        ? 'bg-amber-400 animate-pulse'
+                        : 'bg-rose-500'
+                    }`}
+                  />
+                </span>
+                <span className="hidden lg:inline text-[11px] font-medium tracking-tight">
+                  {backendStatus === 'LIVE'
+                    ? '🟢 Causal Engine Connected'
+                    : backendStatus === 'STARTING'
+                    ? '🟡 Backend Starting...'
+                    : '🔴 Causal Engine Offline (Demo Mode)'}
+                </span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="bg-slate-900 border border-slate-700 text-xs p-3 max-w-xs shadow-xl">
+              {backendStatus === 'LIVE' ? (
+                <div className="space-y-1">
+                  <p className="font-bold text-emerald-400 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block" /> FastAPI Causal Engine Live
+                  </p>
+                  <p className="text-slate-300 text-[11px]">
+                    T-Learner, X-Learner, Precedents, TreeSHAP & LinUCB Bandit loaded.
+                  </p>
+                  <p className="text-slate-400 text-[10px] font-mono">
+                    Enclave PCR-0: {healthInfo?.tee_boundary?.enclave_measurement?.slice(0, 16) || 'attested'}...
+                  </p>
+                </div>
+              ) : backendStatus === 'STARTING' ? (
+                <p className="text-amber-300">FastAPI backend is bootstrapping causal models...</p>
+              ) : (
+                <div className="space-y-1">
+                  <p className="font-bold text-rose-400">Backend Server Offline</p>
+                  <p className="text-slate-300 text-[11px]">
+                    Using resilient demo state. Run <code className="bg-slate-800 px-1 rounded text-white">npm run server</code> to start FastAPI.
+                  </p>
+                  <p className="text-indigo-400 text-[10px] font-semibold">Click badge to re-probe connection.</p>
+                </div>
+              )}
             </TooltipContent>
           </Tooltip>
 

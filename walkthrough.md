@@ -73,14 +73,29 @@ WAPSI (AI Revenue Recovery Engine) frontend has been built strictly from scratch
 
 ---
 
-## 2. Verification & Build Integrity
-- **Production Build**: `npm run build` (`tsc && vite build`) passed with **0 errors and 0 warnings**.
-- **Dev Server**: Running on `http://localhost:3000/`.
-- **All 7 Routes Functional**:
-  1. `/overview`
-  2. `/recovery-center`
-  3. `/ai-decisions`
-  4. `/recovery-cases`
-  5. `/analytics`
-  6. `/governance`
-  7. `/settings`
+## 2. Backend Adapter & Causal ML Service Layer
+
+- **Layered Architecture**: Strict `Page -> Hook -> Service -> Mock Data` pattern ensuring separation of concerns:
+  - `src/services/api/apiClient.ts`: Resilient client with automatic health check polling, connection status reporting (`LIVE`, `STARTING`, `OFFLINE`), and silent fallback to local Zustand store when the server is unreachable.
+  - `src/services/recoveryService.ts`: Real endpoints for `/recovery/cases`, `/recovery/cases/{id}`, `/approve`, `/reject`, and `/simulate-recovery`.
+  - `src/services/decisionsService.ts`: Model health, Qini, AUUC, and action distribution.
+  - `src/services/analyticsService.ts`: Counterfactual comparison and simulator calculations.
+  - `src/services/governanceService.ts`: Verifiable cryptographic SHA-256 audit ledger, policy controls, and TEE status.
+- **Topbar Live Causal Engine Indicator**: Real-time badge in header displaying green `🟢 Causal Engine Connected` when FastAPI is active, and pulsing amber/rose with informative tooltips when offline.
+- **Interactive Causal Simulator**: Recovery simulator in `/analytics` with live failure trigger inputs, amount slider, and IST time-of-day slider enforcing TRAI DND suppression windows.
+- **Strict Compliance with Engineering Rules**:
+  - **Rule 22**: Clearly labeled as "TEE Simulation" / "Prototype Security Boundary".
+  - **Rule 28 & 29**: Zero TypeScript errors and zero console errors.
+  - **Rule 18**: Complete abstraction with fallback to local mock data.
+
+---
+
+## 3. Verification & Build Integrity
+
+- **Production Build**: `npm run build` (`tsc && vite build`) passed with **0 errors**.
+- **Backend Adapter Tests**: `pytest backend/tests/test_frontend_adapter.py` — **8 passed in 19.38s (100%)**.
+- **Pytest Configuration**: Added `pytest.ini` supporting `npm run test:backend` from root directory.
+- **Browser Subagent Navigation Verification**:
+  - Verified `/overview`, `/recovery-center`, `/ai-decisions`, `/recovery-cases`, `/analytics`, `/governance`, `/settings`.
+  - Tested Case Intelligence Drawer slide-in and action approval flow.
+  - 0 console errors detected across all 7 routes.

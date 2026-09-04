@@ -175,4 +175,9 @@ export interface AuditEvent {
   statusBadge: string;
   actor: string;
   enclaveAttested?: boolean;
+  action?: string;
+  hash?: string;
+  prevHash?: string;
+  block_hash?: string;
+  previous_hash?: string;
 }

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { decisionsService } from '../services/mock/decisionsService';
+import { decisionsService } from '../services/decisionsService';
 import { useDemoStore } from '../store/demoStore';
 
 export function useDecisionsOverview() {

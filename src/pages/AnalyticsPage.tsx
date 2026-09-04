@@ -30,6 +30,8 @@ import {
   Check
 } from 'lucide-react';
 import { useDemoStore } from '../store/demoStore';
+import { useAnalytics } from '../hooks/useAnalytics';
+import { formatINR } from '../lib/formatting';
 import { cn } from '../lib/utils';
 import { motion } from 'framer-motion';
 
@@ -263,6 +265,9 @@ export const AnalyticsPage: React.FC = () => {
   const theme = useDemoStore((state) => state.theme);
   const isLight = theme === 'light';
 
+  const { data: analyticsData } = useAnalytics();
+  const liveOverview = analyticsData?.metrics;
+
   const [activeTimeline, setActiveTimeline] = useState<TimelineKey>('This Week');
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
@@ -292,6 +297,27 @@ export const AnalyticsPage: React.FC = () => {
 
   const currentData = analyticsDataByTimeline[activeTimeline] || analyticsDataByTimeline['This Week'];
   const timelineOptions: TimelineKey[] = ['This Week', 'This Month', 'This Quarter', 'Year to Date'];
+
+  // Bind summary KPI cards to live data from GET /api/v1/analytics/summary
+  const displayRecovered = (activeTimeline === 'This Week' && liveOverview?.recovered != null)
+    ? formatINR(liveOverview.recovered, true)
+    : currentData.recoveredValue;
+
+  const displayRecoveredLift = (activeTimeline === 'This Week' && liveOverview?.recoveredDelta != null)
+    ? `▲ ${Math.abs(liveOverview.recoveredDelta)}%`
+    : currentData.recoveredLift;
+
+  const displayIncremental = (activeTimeline === 'This Week' && liveOverview?.incrementalRecovery != null)
+    ? formatINR(liveOverview.incrementalRecovery, true)
+    : currentData.incrementalValue;
+
+  const displayIncrementalLift = (activeTimeline === 'This Week' && liveOverview?.incrementalRecoveryDelta != null)
+    ? `▲ ${Math.abs(liveOverview.incrementalRecoveryDelta)}%`
+    : currentData.incrementalLift;
+
+  const displayTotalCases = (activeTimeline === 'This Week' && analyticsData?.funnel?.[0]?.count != null)
+    ? analyticsData.funnel[0].count.toLocaleString('en-IN')
+    : currentData.totalCases;
 
   // Reusable Timeline Selector Dropdown
   const renderTimelineDropdown = () => (
@@ -379,13 +405,13 @@ export const AnalyticsPage: React.FC = () => {
                 "text-2xl sm:text-3xl font-black tabular-nums tracking-tight",
                 isLight ? "text-purple-700 font-black" : "text-purple-400"
               )}>
-                {currentData.recoveredValue}
+                {displayRecovered}
               </div>
               <div className={cn("text-[10.5px] mt-0.5", isLight ? "text-slate-600 font-medium" : "text-slate-400")}>
                 {currentData.subLabel}
               </div>
               <div className={cn("flex items-center gap-1 text-[11px] font-bold mt-1", isLight ? "text-emerald-700" : "text-emerald-400")}>
-                <span>{currentData.recoveredLift}</span>
+                <span>{displayRecoveredLift}</span>
               </div>
             </div>
 
@@ -438,13 +464,13 @@ export const AnalyticsPage: React.FC = () => {
                 "text-2xl sm:text-3xl font-black tabular-nums tracking-tight",
                 isLight ? "text-emerald-700 font-black" : "text-emerald-400"
               )}>
-                {currentData.incrementalValue}
+                {displayIncremental}
               </div>
               <div className={cn("text-[10.5px] mt-0.5", isLight ? "text-slate-600 font-medium" : "text-slate-400")}>
                 vs baseline
               </div>
               <div className={cn("flex items-center gap-1 text-[11px] font-bold mt-1", isLight ? "text-emerald-700" : "text-emerald-400")}>
-                <span>{currentData.incrementalLift}</span>
+                <span>{displayIncrementalLift}</span>
               </div>
             </div>
 
@@ -485,7 +511,7 @@ export const AnalyticsPage: React.FC = () => {
                 "text-2xl sm:text-3xl font-black tabular-nums tracking-tight",
                 isLight ? "text-cyan-700 font-black" : "text-cyan-400"
               )}>
-                {currentData.totalCases}
+                {displayTotalCases}
               </div>
               <div className={cn("text-[10.5px] mt-0.5", isLight ? "text-slate-600 font-medium" : "text-slate-400")}>
                 {currentData.totalCasesSub}
