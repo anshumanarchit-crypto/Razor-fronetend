@@ -9,6 +9,11 @@ import { HelpModal } from './HelpModal';
 import { UserManagementModal } from './UserManagementModal';
 import { DateRangeModal } from './DateRangeModal';
 import { FiltersModal } from './FiltersModal';
+import { DataTransparencyBanner } from '../shared/DataTransparencyBanner';
+import { HeroDemoModal } from '../recovery/HeroDemoModal';
+import { CounterfactualModal } from '../recovery/CounterfactualModal';
+import { BatchAutopilotModal } from '../recovery/BatchAutopilotModal';
+import { ClosedLoopLearningModal } from '../recovery/ClosedLoopLearningModal';
 import { useDemoStore } from '../../store/demoStore';
 import { cn } from '../../lib/utils';
 
@@ -27,6 +32,7 @@ export const DashboardLayout: React.FC = () => {
           isSidebarCollapsed ? 'ml-20' : 'ml-64'
         )}
       >
+        <DataTransparencyBanner />
         <main className="flex-1 p-6 pb-16 overflow-x-hidden">
           <Outlet />
         </main>
@@ -41,6 +47,12 @@ export const DashboardLayout: React.FC = () => {
       <UserManagementModal />
       <DateRangeModal />
       <FiltersModal />
+
+      {/* AI Decision Engine Demo Modals */}
+      <HeroDemoModal />
+      <CounterfactualModal />
+      <BatchAutopilotModal />
+      <ClosedLoopLearningModal />
     </div>
   );
 };

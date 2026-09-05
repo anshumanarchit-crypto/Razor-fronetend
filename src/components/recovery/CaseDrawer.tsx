@@ -44,6 +44,8 @@ export const CaseDrawer: React.FC = () => {
   const simulateRecovery = useDemoStore((state) => state.simulateRecovery);
   const isPolicyCheckRunning = useDemoStore((state) => state.isPolicyCheckRunning);
   const policyCheckProgress = useDemoStore((state) => state.policyCheckProgress);
+  const openCounterfactualModal = useDemoStore((state) => state.openCounterfactualModal);
+  const openLearningModal = useDemoStore((state) => state.openLearningModal);
 
   const [copied, setCopied] = useState(false);
   const [selectedActionPreview, setSelectedActionPreview] = useState<string | null>(null);
@@ -314,6 +316,69 @@ export const CaseDrawer: React.FC = () => {
             </div>
           </div>
 
+          {/* Expected Net Recovery Value & Unit Economics */}
+          <div className={cn(
+            "p-4 rounded-2xl border space-y-3 shadow-md relative overflow-hidden",
+            isLight
+              ? "bg-white border-emerald-200 text-slate-900"
+              : "bg-emerald-950/20 border-emerald-500/30 text-slate-100"
+          )}>
+            <div className="flex items-center justify-between">
+              <span className={cn("font-bold text-xs flex items-center gap-1.5", isLight ? "text-emerald-700" : "text-emerald-400")}>
+                <Sparkles className="w-3.5 h-3.5" />
+                Expected Net Recovery Value (Decision Objective)
+              </span>
+              <span className={cn(
+                "text-[10px] font-bold px-2 py-0.5 rounded border",
+                isLight ? "bg-emerald-100 text-emerald-800 border-emerald-300" : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+              )}>
+                ArgMax Net Value
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className={cn("p-2.5 rounded-xl border", isLight ? "bg-slate-50 border-slate-200" : "bg-slate-900/60 border-slate-800")}>
+                <span className={cn("text-[9px] block font-bold uppercase", isLight ? "text-slate-500" : "text-slate-400")}>Gross Expected</span>
+                <span className={cn("text-sm font-black tabular-nums block mt-0.5", isLight ? "text-slate-900" : "text-slate-200")}>
+                  {formatINR(currentCase.expectedRecoveredValue || Math.round(currentCase.amount * currentCase.treatmentProbability))}
+                </span>
+                <span className="text-[8.5px] text-slate-500 font-mono">P(t) × Amount</span>
+              </div>
+
+              <div className={cn("p-2.5 rounded-xl border", isLight ? "bg-rose-50 border-rose-200" : "bg-rose-950/30 border-rose-500/30")}>
+                <span className={cn("text-[9px] block font-bold uppercase", isLight ? "text-rose-700" : "text-rose-300")}>Total Cost</span>
+                <span className="text-sm font-black tabular-nums block mt-0.5 text-rose-500">
+                  -{formatINR(currentCase.interventionCost || 6)}
+                </span>
+                <span className="text-[8.5px] text-rose-500/80 font-mono">Fees + Risk</span>
+              </div>
+
+              <div className={cn("p-2.5 rounded-xl border", isLight ? "bg-emerald-50 border-emerald-300" : "bg-emerald-900/40 border-emerald-500/50")}>
+                <span className={cn("text-[9px] block font-bold uppercase", isLight ? "text-emerald-800" : "text-emerald-300")}>Expected Net</span>
+                <span className={cn("text-sm font-black tabular-nums block mt-0.5", isLight ? "text-emerald-700" : "text-emerald-400")}>
+                  {formatINR(currentCase.expectedNetRecoveryValue || (Math.round(currentCase.amount * currentCase.treatmentProbability) - (currentCase.interventionCost || 6)))}
+                </span>
+                <span className="text-[8.5px] text-emerald-600 dark:text-emerald-400 font-mono">Gross - Cost</span>
+              </div>
+            </div>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className={cn(
+                "w-full flex items-center justify-center gap-2 py-2 rounded-xl font-bold text-xs border transition-all shadow-sm cursor-pointer",
+                isLight
+                  ? "bg-purple-50 hover:bg-purple-100 text-purple-900 border-purple-300"
+                  : "bg-purple-950/40 hover:bg-purple-900/60 text-purple-200 border-purple-500/40"
+              )}
+              onClick={() => openCounterfactualModal(currentCase.caseId)}
+            >
+              <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+              <span>Simulate Counterfactual "What If?" Treatments</span>
+              <ArrowUpRight className="w-3.5 h-3.5 ml-auto opacity-70" />
+            </Button>
+          </div>
+
           {/* Action Comparison Bars */}
           <div className={cn(
             "p-4 rounded-2xl border space-y-3 shadow-md",
@@ -324,12 +389,13 @@ export const CaseDrawer: React.FC = () => {
                 <BarChart2 className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
                 Action Comparison Matrix (vs No Action)
               </span>
-              <span className={cn("text-[10px]", isLight ? "text-slate-500" : "text-slate-400")}>Recovery Prob | Uplift</span>
+              <span className={cn("text-[10px]", isLight ? "text-slate-500" : "text-slate-400")}>Recovery Prob | Net Value</span>
             </div>
 
             <div className="space-y-2.5">
               {detail.actionScores.map((score) => {
                 const isBest = score.action === detail.bestAction;
+                const netVal = score.expectedNetRecoveryValue ?? score.estimatedValue ?? Math.round(score.recoveryProbability * currentCase.amount - (score.totalCost || 0));
                 return (
                   <div 
                     key={score.action} 
@@ -352,7 +418,7 @@ export const CaseDrawer: React.FC = () => {
                               ? "bg-indigo-100 text-indigo-800 border-indigo-300"
                               : "bg-indigo-500/30 text-indigo-200 border-indigo-400/30"
                           )}>
-                            ★ RECOMMENDED
+                            ★ OPTIMAL NET VALUE
                           </span>
                         )}
                       </div>
@@ -360,16 +426,14 @@ export const CaseDrawer: React.FC = () => {
                         <span className={cn("tabular-nums font-bold", isLight ? "text-slate-900" : "text-slate-300")}>
                           {Math.round(score.recoveryProbability * 100)}%
                         </span>
-                        {score.action !== 'NO_ACTION' && (
-                          <span className={cn(
-                            "tabular-nums font-bold px-1.5 py-0.2 rounded border",
-                            isLight
-                              ? "text-emerald-800 bg-emerald-100 border-emerald-300"
-                              : "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
-                          )}>
-                            +{Math.round(score.incrementalUplift * 100)}%
-                          </span>
-                        )}
+                        <span className={cn(
+                          "tabular-nums font-bold px-1.5 py-0.2 rounded border text-[10px]",
+                          isLight
+                            ? "text-emerald-800 bg-emerald-100 border-emerald-300"
+                            : "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                        )}>
+                          Net: {formatINR(netVal)}
+                        </span>
                       </div>
                     </div>
                     <div className={cn("h-2 w-full rounded-full overflow-hidden", isLight ? "bg-slate-200" : "bg-slate-800/80")}>
@@ -390,6 +454,7 @@ export const CaseDrawer: React.FC = () => {
               })}
             </div>
           </div>
+
 
           {/* Why WAPSI Chose This (SHAP Feature Attribution) */}
           <div className={cn(
@@ -551,57 +616,69 @@ export const CaseDrawer: React.FC = () => {
           ) : (
             <div className="space-y-2">
               {currentCase.status !== 'RECOVERED' && (
-                <div className="flex gap-2">
-                  <Button
-                    variant="success"
-                    className="flex-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-600/30 text-white gap-1.5 py-2.5 rounded-xl cursor-pointer"
-                    onClick={() => approveCase(currentCase.caseId)}
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    Approve Action
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className={cn(
-                      "text-xs font-semibold px-4 rounded-xl cursor-pointer",
-                      isLight ? "border-slate-300 hover:bg-slate-200 text-slate-800 bg-white" : "border-slate-700 hover:bg-slate-800 text-slate-200"
-                    )}
-                    onClick={() => reviewCase(currentCase.caseId)}
-                  >
-                    Review
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    className="text-xs font-semibold px-4 rounded-xl cursor-pointer"
-                    onClick={() => rejectCase(currentCase.caseId)}
-                  >
-                    Reject
-                  </Button>
-                </div>
-              )}
+                <>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="success"
+                      className="flex-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 shadow-lg shadow-emerald-600/30 text-white gap-1.5 py-2.5 rounded-xl cursor-pointer"
+                      onClick={() => approveCase(currentCase.caseId)}
+                    >
+                      <CheckCircle2 className="w-4 h-4" />
+                      Approve Action
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className={cn(
+                        "text-xs font-semibold px-4 rounded-xl cursor-pointer",
+                        isLight ? "border-slate-300 hover:bg-slate-200 text-slate-800 bg-white" : "border-slate-700 hover:bg-slate-800 text-slate-200"
+                      )}
+                      onClick={() => reviewCase(currentCase.caseId)}
+                    >
+                      Review
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="text-xs font-semibold px-4 rounded-xl cursor-pointer"
+                      onClick={() => rejectCase(currentCase.caseId)}
+                    >
+                      Reject
+                    </Button>
+                  </div>
 
-              {currentCase.status === 'APPROVED' && (
-                <Button
-                  variant="primary"
-                  className="w-full text-xs font-bold py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 shadow-xl shadow-emerald-600/30 gap-1.5 cursor-pointer text-white"
-                  onClick={() => simulateRecovery(currentCase.caseId)}
-                >
-                  <Zap className="w-4 h-4 text-amber-300" />
-                  Simulate Successful Payment Recovery
-                </Button>
+                  <Button
+                    variant="primary"
+                    className="w-full text-xs font-bold py-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 shadow-md shadow-emerald-600/20 gap-1.5 cursor-pointer text-white"
+                    onClick={() => simulateRecovery(currentCase.caseId)}
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-300" />
+                    Simulate Outcome & Closed-Loop Learning Update
+                  </Button>
+                </>
               )}
 
               {currentCase.status === 'RECOVERED' && (
-                <div className={cn(
-                  "w-full p-3 rounded-xl border text-center font-bold text-xs flex items-center justify-center gap-2 shadow-md",
-                  isLight
-                    ? "bg-emerald-50 border-emerald-300 text-emerald-800"
-                    : "bg-gradient-to-r from-emerald-950/80 to-teal-950/80 border-emerald-500/40 text-emerald-300"
-                )}>
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                  <span>Successfully Recovered ({formatINR(currentCase.amount)})</span>
+                <div className="space-y-2">
+                  <div className={cn(
+                    "w-full p-3 rounded-xl border text-center font-bold text-xs flex items-center justify-center gap-2 shadow-md",
+                    isLight
+                      ? "bg-emerald-50 border-emerald-300 text-emerald-800"
+                      : "bg-gradient-to-r from-emerald-950/80 to-teal-950/80 border-emerald-500/40 text-emerald-300"
+                  )}>
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Successfully Recovered ({formatINR(currentCase.amount)})</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full text-xs font-semibold py-2 rounded-xl cursor-pointer",
+                      isLight ? "bg-white border-slate-300 text-slate-800 hover:bg-slate-100" : "bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800"
+                    )}
+                    onClick={() => openLearningModal()}
+                  >
+                    View Closed-Loop Bayesian Prior Shift
+                  </Button>
                 </div>
               )}
             </div>

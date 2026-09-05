@@ -13,7 +13,8 @@ import {
   Sliders,
   Sun,
   Moon,
-  Activity
+  Activity,
+  Zap
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { useDemoStore } from '../../store/demoStore';
@@ -34,6 +35,8 @@ export const Topbar: React.FC<TopbarProps> = ({ title, subtitle, showSearch = tr
   const setHelpModalOpen = useDemoStore((state) => state.setHelpModalOpen);
   const setDateRangeModalOpen = useDemoStore((state) => state.setDateRangeModalOpen);
   const setFiltersModalOpen = useDemoStore((state) => state.setFiltersModalOpen);
+  const openHeroDemo = useDemoStore((state) => state.openHeroDemo);
+  const openAutopilotModal = useDemoStore((state) => state.openAutopilotModal);
   const selectedDateRange = useDemoStore((state) => state.selectedDateRange);
   const activeFilterCount = useDemoStore((state) => state.activeFilterCount);
   const userProfile = useDemoStore((state) => state.userProfile);
@@ -79,6 +82,38 @@ export const Topbar: React.FC<TopbarProps> = ({ title, subtitle, showSearch = tr
       {/* Right Controls */}
       <div className="flex items-center gap-3">
         <TooltipProvider delayDuration={150}>
+          {/* ⚡ Hero Demo Button */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={openHeroDemo}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500/20 via-indigo-500/20 to-emerald-500/20 border border-amber-500/40 text-xs font-bold text-amber-300 hover:text-white hover:border-amber-400 hover:bg-amber-500/30 transition-all shadow-sm shadow-amber-500/10 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                <span>⚡ Hero Demo (₹8,999)</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="bg-slate-900 border border-slate-700 text-xs">
+              <p>Launch official 10-step judging demo sequence</p>
+            </TooltipContent>
+          </Tooltip>
+
+          {/* 🚀 Batch Autopilot Button */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={openAutopilotModal}
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-950/60 border border-indigo-500/40 text-xs font-bold text-indigo-300 hover:text-white hover:border-indigo-400 hover:bg-indigo-900/60 transition-all shadow-sm cursor-pointer"
+              >
+                <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Run Autopilot</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="bg-slate-900 border border-slate-700 text-xs">
+              <p>Process 350 transactions with invariant verification</p>
+            </TooltipContent>
+          </Tooltip>
+
           {/* Date Selector */}
           <Tooltip>
             <TooltipTrigger asChild>

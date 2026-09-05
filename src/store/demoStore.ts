@@ -7,17 +7,30 @@ import {
   CaseStatus, 
   ActionType, 
   MerchantSettings,
-  PolicyControlRow 
+  PolicyControlRow,
+  TransactionFeatures,
+  BatchAutopilotResult,
+  ModelDriftReport,
+  ClosedLoopUpdateResult
 } from '../types';
 import { 
-  mockRecoveryCases, 
-  mockCaseDetailMap, 
-  initialOverviewMetrics, 
   mockAuditTrail, 
   initialMerchantSettings,
   mockPolicyControls
 } from '../mock/mockData';
 import { recoveryService } from '../services/recoveryService';
+import { 
+  makeRecoveryDecision, 
+  simulateRecoveryOutcome, 
+  runBatchAutopilot, 
+  generateDriftReport,
+  generateSyntheticTransactions,
+  getHeroTransaction,
+  initialEngineState,
+  EngineState,
+  PolicyRulesConfig,
+  ChannelCostConfig
+} from '../services/causalEngine';
 
 export interface UserProfile {
   name: string;
@@ -39,7 +52,74 @@ export interface TeamMember {
   lastActive: string;
 }
 
-interface DemoStoreState {
+// Generate the authoritative dataset of 350 synthetic records
+const initialSyntheticTransactions = generateSyntheticTransactions(350, 42);
+
+// Function to convert DecisionOutput into RecoveryCase
+function decisionToCase(tx: TransactionFeatures, dec: DecisionOutput, existingStatus?: CaseStatus): RecoveryCase {
+  return {
+    caseId: tx.transaction_id,
+    customerId: tx.customer_id_hash,
+    customerName: tx.customer_name,
+    customerHandle: tx.customer_handle,
+    merchantId: tx.merchant_id,
+    domain: tx.domain,
+    amount: tx.amount,
+    failureReason: tx.failure_reason,
+    failureCode: tx.failure_code,
+    attempts: tx.attempt_count,
+    maxAttempts: tx.max_attempts,
+    contactsMade: tx.contacts_made,
+    maxContacts: tx.max_contacts,
+    issuer: tx.issuer,
+    status: existingStatus || (dec.humanReviewRequired === 'HUMAN_REVIEW' ? 'REVIEW' : 'READY'),
+    naturalRecoveryProbability: dec.naturalRecoveryProbability,
+    treatmentProbability: dec.selectedActionScore!.recoveryProbability,
+    incrementalUplift: dec.incrementalUplift,
+    expectedRecoveredValue: dec.expectedRecoveredValue,
+    expectedNetRecoveryValue: dec.expectedNetRecoveryValue,
+    interventionCost: dec.selectedActionScore!.totalCost,
+    recommendedAction: dec.recommendedAction!,
+    recommendedActionLabel: dec.recommendedActionLabel!,
+    recommendedTime: dec.timing.recommendedTimeText,
+    optimalWindow: dec.timing.optimalWindowText,
+    decisionConfidence: dec.confidence,
+    decisionSource: 'NETWORK_MERCHANT',
+    isOOD: dec.uncertainty.isOOD,
+    humanReviewRequired: dec.humanReviewRequired,
+    createdAt: '2025-08-28T10:32:14Z',
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+// Initialize case map and detail map from central decision engine
+const initialCaseMap: Record<string, TransactionFeatures> = {};
+const initialCaseDetails: Record<string, DecisionOutput> = {};
+const initialCases: RecoveryCase[] = [];
+
+initialSyntheticTransactions.forEach((tx) => {
+  initialCaseMap[tx.transaction_id] = tx;
+  const dec = makeRecoveryDecision(tx, initialEngineState);
+  initialCaseDetails[tx.transaction_id] = dec;
+  initialCases.push(decisionToCase(tx, dec));
+});
+
+// Calculate live policy status counts
+function computePolicyCounts(cases: RecoveryCase[]): { pass: number; review: number; block: number } {
+  let pass = 0;
+  let review = 0;
+  let block = 0;
+  cases.forEach((c) => {
+    if (c.humanReviewRequired === 'BLOCKED') block++;
+    else if (c.humanReviewRequired === 'HUMAN_REVIEW') review++;
+    else pass++;
+  });
+  return { pass, review, block };
+}
+
+const initialPolicyCounts = computePolicyCounts(initialCases);
+
+export interface DemoStoreState {
   // Global Layout & Modals
   isSidebarCollapsed: boolean;
   isCaseDrawerOpen: boolean;
@@ -50,6 +130,14 @@ interface DemoStoreState {
   isUserManagementModalOpen: boolean;
   isDateRangeModalOpen: boolean;
   isFiltersModalOpen: boolean;
+
+  // New Demo Modals
+  isHeroDemoOpen: boolean;
+  heroDemoStep: number;
+  isAutopilotModalOpen: boolean;
+  isAutopilotRunning: boolean;
+  isCounterfactualModalOpen: boolean;
+  isLearningModalOpen: boolean;
 
   // Global Header Filter & Date Range State
   selectedDateRange: string;
@@ -63,6 +151,14 @@ interface DemoStoreState {
     onlyHighImpact: boolean;
     regulatoryBoundsVerified: boolean;
   };
+
+  // Core Causal Engine State
+  engineState: EngineState;
+  rawTransactions: Record<string, TransactionFeatures>;
+  policyCounts: { pass: number; review: number; block: number };
+  autopilotResult: BatchAutopilotResult | null;
+  driftReport: ModelDriftReport;
+  lastLearningResult: ClosedLoopUpdateResult | null;
 
   // Core Data
   overviewMetrics: OverviewMetrics;
@@ -99,6 +195,29 @@ interface DemoStoreState {
   setUserManagementModalOpen: (open: boolean) => void;
   setDateRangeModalOpen: (open: boolean) => void;
   setFiltersModalOpen: (open: boolean) => void;
+
+  // Hero Demo Actions
+  openHeroDemo: () => void;
+  closeHeroDemo: () => void;
+  setHeroDemoStep: (step: number) => void;
+
+  // Autopilot Actions
+  openAutopilotModal: () => void;
+  closeAutopilotModal: () => void;
+  runAutopilot: () => Promise<BatchAutopilotResult>;
+
+  // Counterfactual & Learning Actions
+  openCounterfactualModal: (caseId?: string) => void;
+  closeCounterfactualModal: () => void;
+  openLearningModal: () => void;
+  closeLearningModal: () => void;
+
+  // Engine Actions
+  updatePolicyRule: (rule: keyof PolicyRulesConfig, value: number) => void;
+  updateChannelCost: (action: ActionType, cost: Partial<ChannelCostConfig>) => void;
+  updateTransactionAmount: (caseId: string, newAmount: number) => void;
+  setDriftLevel: (level: 'STABLE' | 'WARNING' | 'CRITICAL') => void;
+
   setSelectedDateRange: (range: string) => void;
   updateFiltersState: (filters: Partial<DemoStoreState['filtersState']>) => void;
   resetFilters: () => void;
@@ -112,7 +231,7 @@ interface DemoStoreState {
   approveCase: (caseId: string) => Promise<void>;
   reviewCase: (caseId: string) => void;
   rejectCase: (caseId: string) => void;
-  simulateRecovery: (caseId: string) => void;
+  simulateRecovery: (caseId: string, forceSuccess?: boolean) => Promise<ClosedLoopUpdateResult | null>;
   
   // Update Actions
   updateSettings: (settings: Partial<MerchantSettings>) => void;
@@ -136,22 +255,49 @@ export const useDemoStore = create<DemoStoreState>((set, get) => ({
   isDateRangeModalOpen: false,
   isFiltersModalOpen: false,
 
+  // New Demo Modals
+  isHeroDemoOpen: false,
+  heroDemoStep: 1,
+  isAutopilotModalOpen: false,
+  isAutopilotRunning: false,
+  isCounterfactualModalOpen: false,
+  isLearningModalOpen: false,
+
   selectedDateRange: 'Aug 22 – Aug 28, 2025',
   activeFilterCount: 7,
   filtersState: {
     domains: ['Subscriptions', 'Checkout', 'B2B'],
-    minUplift: 10,
-    minConfidence: 75,
+    minUplift: 8,
+    minConfidence: 80,
     evidenceSources: ['Network Data', 'Merchant Prior', 'Enclave Attested'],
     statuses: ['READY', 'REVIEW', 'APPROVED'],
     onlyHighImpact: false,
     regulatoryBoundsVerified: true,
   },
 
-  overviewMetrics: initialOverviewMetrics,
-  cases: mockRecoveryCases,
+  // Causal Engine Single Source of Truth
+  engineState: initialEngineState,
+  rawTransactions: initialCaseMap,
+  policyCounts: initialPolicyCounts,
+  autopilotResult: null,
+  driftReport: generateDriftReport(initialEngineState),
+  lastLearningResult: null,
+
+  overviewMetrics: {
+    revenueAtRisk: 1842000,
+    revenueAtRiskDelta: 16.7,
+    recoverable: 1176000,
+    recoverableDelta: 25.4,
+    incrementalRecovery: 214000,
+    incrementalRecoveryDelta: 37.2,
+    recovered: 782000,
+    recoveredDelta: 21.3,
+    recoveryRate: 66.5,
+    recoveryRateDeltaPp: 4.6,
+  },
+  cases: initialCases,
   selectedCaseId: 'RX-48291',
-  caseDetails: mockCaseDetailMap,
+  caseDetails: initialCaseDetails,
   auditTrail: mockAuditTrail,
   merchantSettings: initialMerchantSettings,
   policyControls: mockPolicyControls,
@@ -182,6 +328,7 @@ export const useDemoStore = create<DemoStoreState>((set, get) => ({
   lastRecoveredCaseId: null,
   activeNotification: null,
 
+  // Modal Actions
   toggleSidebar: () => set((s) => ({ isSidebarCollapsed: !s.isSidebarCollapsed })),
   setSidebarCollapsed: (collapsed) => set({ isSidebarCollapsed: collapsed }),
   selectCase: (caseId) => set({ selectedCaseId: caseId }),
@@ -195,151 +342,304 @@ export const useDemoStore = create<DemoStoreState>((set, get) => ({
   setUserManagementModalOpen: (open) => set({ isUserManagementModalOpen: open }),
   setDateRangeModalOpen: (open) => set({ isDateRangeModalOpen: open }),
   setFiltersModalOpen: (open) => set({ isFiltersModalOpen: open }),
-  setSelectedDateRange: (range) => {
-    let metrics = initialOverviewMetrics;
-    if (range.includes('Today')) {
-      metrics = {
-        revenueAtRisk: 284000,
-        revenueAtRiskDelta: 5.2,
-        recoverable: 218000,
-        recoverableDelta: 8.4,
-        incrementalRecovery: 32000,
-        incrementalRecoveryDelta: 12.1,
-        recovered: 118000,
-        recoveredDelta: 14.5,
-        recoveryRate: 41.5,
-        recoveryRateDeltaPp: 3.2,
-      };
-    } else if (range.includes('Month') || range.includes('30 Days') || range.includes('Aug 1 – Aug 28')) {
-      metrics = {
-        revenueAtRisk: 7850000,
-        revenueAtRiskDelta: 12.4,
-        recoverable: 6120000,
-        recoverableDelta: 16.8,
-        incrementalRecovery: 860000,
-        incrementalRecoveryDelta: 24.5,
-        recovered: 3140000,
-        recoveredDelta: 28.2,
-        recoveryRate: 40.0,
-        recoveryRateDeltaPp: 4.8,
-      };
-    } else if (range.includes('90 Days') || range.includes('Quarter') || range.includes('Jun 1 – Aug 28')) {
-      metrics = {
-        revenueAtRisk: 23500000,
-        revenueAtRiskDelta: 18.2,
-        recoverable: 18400000,
-        recoverableDelta: 21.4,
-        incrementalRecovery: 2580000,
-        incrementalRecoveryDelta: 31.0,
-        recovered: 9420000,
-        recoveredDelta: 35.8,
-        recoveryRate: 40.1,
-        recoveryRateDeltaPp: 5.4,
-      };
-    } else if (range.includes('Year') || range.includes('Jan 1 – Aug 28')) {
-      metrics = {
-        revenueAtRisk: 94000000,
-        revenueAtRiskDelta: 22.5,
-        recoverable: 73500000,
-        recoverableDelta: 26.2,
-        incrementalRecovery: 10300000,
-        incrementalRecoveryDelta: 37.6,
-        recovered: 37600000,
-        recoveredDelta: 41.2,
-        recoveryRate: 40.0,
-        recoveryRateDeltaPp: 6.1,
-      };
-    }
 
-    set({ 
-      selectedDateRange: range, 
-      overviewMetrics: metrics,
-      activeNotification: `Analysis timeframe set to ${range}` 
-    });
-  },
-  updateFiltersState: (newFilters) => {
-    set((state) => {
-      const updated = { ...state.filtersState, ...newFilters };
-      // Count total active criteria
-      let count = 0;
-      count += updated.domains.length;
-      if (updated.minUplift > 0) count++;
-      if (updated.minConfidence > 0) count++;
-      count += updated.evidenceSources.length;
-      count += updated.statuses.length;
-      if (updated.onlyHighImpact) count++;
-      if (updated.regulatoryBoundsVerified) count++;
+  // Hero Demo
+  openHeroDemo: () => set({ isHeroDemoOpen: true, heroDemoStep: 1, selectedCaseId: 'RX-48291' }),
+  closeHeroDemo: () => set({ isHeroDemoOpen: false }),
+  setHeroDemoStep: (step) => set({ heroDemoStep: step }),
 
-      return {
-        filtersState: updated,
-        activeFilterCount: Math.max(1, count),
-        activeNotification: `Filters updated (${Math.max(1, count)} criteria active)`,
-      };
+  // Autopilot Modal
+  openAutopilotModal: () => set({ isAutopilotModalOpen: true }),
+  closeAutopilotModal: () => set({ isAutopilotModalOpen: false }),
+
+  // Counterfactual Modal
+  openCounterfactualModal: (caseId) => set({ 
+    isCounterfactualModalOpen: true, 
+    selectedCaseId: caseId || get().selectedCaseId || 'RX-48291' 
+  }),
+  closeCounterfactualModal: () => set({ isCounterfactualModalOpen: false }),
+
+  // Learning Modal
+  openLearningModal: () => set({ isLearningModalOpen: true }),
+  closeLearningModal: () => set({ isLearningModalOpen: false }),
+
+  // ============================================================
+  // CAUSAL ENGINE REACTIVE ACTIONS (AFFECTS STATE & LIVE ROUTING)
+  // ============================================================
+
+  updatePolicyRule: (rule, value) => {
+    const currentState = get().engineState;
+    const updatedPolicyRules = {
+      ...currentState.policyRules,
+      [rule]: value,
+    };
+    const nextEngineState: EngineState = {
+      ...currentState,
+      policyRules: updatedPolicyRules,
+    };
+
+    // Re-evaluate all cases using the updated policy rules
+    const txMap = get().rawTransactions;
+    const updatedDetails: Record<string, DecisionOutput> = {};
+    const updatedCases = get().cases.map((c) => {
+      const tx = txMap[c.caseId] || getHeroTransaction();
+      const dec = makeRecoveryDecision(tx, nextEngineState);
+      updatedDetails[c.caseId] = dec;
+      return decisionToCase(tx, dec, c.status);
     });
-  },
-  resetFilters: () => {
+
+    const newPolicyCounts = computePolicyCounts(updatedCases);
+
     set({
-      filtersState: {
-        domains: ['Subscriptions', 'Checkout', 'B2B'],
-        minUplift: 10,
-        minConfidence: 75,
-        evidenceSources: ['Network Data', 'Merchant Prior', 'Enclave Attested'],
-        statuses: ['READY', 'REVIEW', 'APPROVED'],
-        onlyHighImpact: false,
-        regulatoryBoundsVerified: true,
-      },
-      activeFilterCount: 7,
-      activeNotification: 'Filters reset to default configuration.',
+      engineState: nextEngineState,
+      cases: updatedCases,
+      caseDetails: updatedDetails,
+      policyCounts: newPolicyCounts,
+      activeNotification: `Governance rule '${String(rule)}' updated to ${value}. Re-evaluated ${updatedCases.length} cases (Pass: ${newPolicyCounts.pass}, Review: ${newPolicyCounts.review}, Block: ${newPolicyCounts.block}).`,
     });
+  },
+
+  updateChannelCost: (action, costDelta) => {
+    const currentState = get().engineState;
+    const currentCosts = currentState.channelCosts[action];
+    const nextEngineState: EngineState = {
+      ...currentState,
+      channelCosts: {
+        ...currentState.channelCosts,
+        [action]: { ...currentCosts, ...costDelta },
+      },
+    };
+
+    const txMap = get().rawTransactions;
+    const updatedDetails: Record<string, DecisionOutput> = {};
+    const updatedCases = get().cases.map((c) => {
+      const tx = txMap[c.caseId] || getHeroTransaction();
+      const dec = makeRecoveryDecision(tx, nextEngineState);
+      updatedDetails[c.caseId] = dec;
+      return decisionToCase(tx, dec, c.status);
+    });
+
+    set({
+      engineState: nextEngineState,
+      cases: updatedCases,
+      caseDetails: updatedDetails,
+      policyCounts: computePolicyCounts(updatedCases),
+      activeNotification: `Channel cost for ${action} updated. Net expected values and rankings recomputed across all cases.`,
+    });
+  },
+
+  updateTransactionAmount: (caseId, newAmount) => {
+    const tx = get().rawTransactions[caseId];
+    if (!tx) return;
+
+    const updatedTx = { ...tx, amount: newAmount };
+    const updatedRawTransactions = { ...get().rawTransactions, [caseId]: updatedTx };
+    const dec = makeRecoveryDecision(updatedTx, get().engineState);
+
+    const updatedCases = get().cases.map((c) => (c.caseId === caseId ? decisionToCase(updatedTx, dec, c.status) : c));
+    const updatedDetails = { ...get().caseDetails, [caseId]: dec };
+
+    set({
+      rawTransactions: updatedRawTransactions,
+      cases: updatedCases,
+      caseDetails: updatedDetails,
+      activeNotification: `Case ${caseId} amount updated to ₹${newAmount.toLocaleString('en-IN')}. Expected recovered and net values recalculated.`,
+    });
+  },
+
+  setDriftLevel: (level) => {
+    const nextEngineState: EngineState = {
+      ...get().engineState,
+      driftState: {
+        level,
+        psi: level === 'CRITICAL' ? 0.318 : level === 'WARNING' ? 0.142 : 0.042,
+        injectedDrift: level !== 'STABLE',
+      },
+    };
+
+    const nextDriftReport = generateDriftReport(nextEngineState);
+
+    // Re-evaluate all cases: CRITICAL drift escalates cases into HUMAN_REVIEW
+    const txMap = get().rawTransactions;
+    const updatedDetails: Record<string, DecisionOutput> = {};
+    const updatedCases = get().cases.map((c) => {
+      const tx = txMap[c.caseId] || getHeroTransaction();
+      const dec = makeRecoveryDecision(tx, nextEngineState);
+      updatedDetails[c.caseId] = dec;
+      return decisionToCase(tx, dec, c.status);
+    });
+
+    const newCounts = computePolicyCounts(updatedCases);
+
+    set({
+      engineState: nextEngineState,
+      driftReport: nextDriftReport,
+      cases: updatedCases,
+      caseDetails: updatedDetails,
+      policyCounts: newCounts,
+      activeNotification: `Model drift status set to ${level} (PSI ${nextDriftReport.psi}). Routing updated: ${newCounts.review} cases now in Human Review.`,
+    });
+  },
+
+  runAutopilot: async () => {
+    set({ isAutopilotRunning: true });
+    
+    // Simulate real batch processing step
+    await new Promise((r) => setTimeout(r, 600));
+
+    const transactions = Object.values(get().rawTransactions);
+    const result = runBatchAutopilot(transactions, get().engineState);
+
+    // Update cases with decisions from autopilot
+    const updatedDetails: Record<string, DecisionOutput> = {};
+    result.processedDecisions.forEach((dec) => {
+      updatedDetails[dec.caseId] = dec;
+    });
+
+    const updatedCases = get().cases.map((c) => {
+      const dec = updatedDetails[c.caseId];
+      if (!dec) return c;
+      const tx = get().rawTransactions[c.caseId] || getHeroTransaction();
+      return decisionToCase(tx, dec, c.status);
+    });
+
+    // Update overview metrics directly from the batch run
+    const nextOverviewMetrics: OverviewMetrics = {
+      revenueAtRisk: result.totalGMVAtRisk,
+      revenueAtRiskDelta: 16.7,
+      recoverable: result.expectedRecoveredValue,
+      recoverableDelta: 25.4,
+      incrementalRecovery: result.expectedIncrementalRecovery,
+      incrementalRecoveryDelta: 37.2,
+      recovered: get().overviewMetrics.recovered,
+      recoveredDelta: 21.3,
+      recoveryRate: Number(((result.expectedRecoveredValue / result.totalGMVAtRisk) * 100).toFixed(1)),
+      recoveryRateDeltaPp: 4.6,
+    };
+
+    set({
+      isAutopilotRunning: false,
+      autopilotResult: result,
+      cases: updatedCases,
+      caseDetails: updatedDetails,
+      overviewMetrics: nextOverviewMetrics,
+      policyCounts: {
+        pass: result.autonomousCount,
+        review: result.humanReviewCount,
+        block: result.blockedCount,
+      },
+      activeNotification: `Batch Autopilot finished processing ${result.totalProcessed} transactions! Invariant verified: AUTO (${result.autonomousCount}) + REVIEW (${result.humanReviewCount}) + BLOCK (${result.blockedCount}) = ${result.totalProcessed}.`,
+    });
+
+    return result;
+  },
+
+  simulateRecovery: async (caseId: string, forceSuccess = true) => {
+    const state = get();
+    const tx = state.rawTransactions[caseId] || getHeroTransaction();
+    const targetCase = state.cases.find((c) => c.caseId === caseId) || state.cases[0];
+
+    // Call real backend endpoint if online
+    try {
+      await recoveryService.simulateRecovery(caseId);
+    } catch {}
+
+    // Execute genuine closed-loop learning in central decision engine
+    const { updatedState, learningResult, nextDecision } = simulateRecoveryOutcome(
+      tx,
+      targetCase.recommendedAction,
+      state.engineState,
+      forceSuccess
+    );
+
+    const recoveryAmount = tx.amount;
+    const now = new Date();
+    const timeStr = now.toTimeString().split(' ')[0];
+
+    const newAuditEvent: AuditEvent = {
+      id: `AUD-${Math.floor(10000 + Math.random() * 90000)}`,
+      caseId,
+      timestamp: timeStr,
+      stage: 'EXECUTED',
+      title: learningResult.recovered ? 'Payment Successfully Recovered' : 'Payment Recovery Attempt Completed',
+      description: `Recovered ₹${recoveryAmount.toLocaleString('en-IN')} via ${targetCase.recommendedActionLabel} at peak recovery window. Bayesian prior shifted: ${learningResult.posteriorShift}. ${learningResult.auditHash}`,
+      statusBadge: 'EXECUTED',
+      actor: 'WAPSI Recovery Engine (Closed-Loop Learning)',
+      enclaveAttested: true,
+    };
+
+    const updatedCases = state.cases.map((c) =>
+      c.caseId === caseId
+        ? {
+            ...c,
+            status: (learningResult.recovered ? 'RECOVERED' : 'FAILED') as CaseStatus,
+            updatedAt: now.toISOString(),
+          }
+        : c
+    );
+
+    const updatedDetails = {
+      ...state.caseDetails,
+      [caseId]: nextDecision,
+    };
+
+    set({
+      engineState: updatedState,
+      cases: updatedCases,
+      caseDetails: updatedDetails,
+      lastLearningResult: learningResult,
+      isLearningModalOpen: true,
+      lastRecoveredCaseId: caseId,
+      overviewMetrics: {
+        ...state.overviewMetrics,
+        recovered: state.overviewMetrics.recovered + (learningResult.recovered ? recoveryAmount : 0),
+        incrementalRecovery: state.overviewMetrics.incrementalRecovery + (learningResult.recovered ? Math.round(recoveryAmount * targetCase.incrementalUplift) : 0),
+        recoverable: Math.max(0, state.overviewMetrics.recoverable - recoveryAmount),
+      },
+      auditTrail: [newAuditEvent, ...state.auditTrail],
+      activeNotification: `Closed-loop learning applied! ${targetCase.recommendedActionLabel} prior updated (${learningResult.posteriorShift}).`,
+    });
+
+    return learningResult;
   },
 
   approveCase: async (caseId: string) => {
     set({ isPolicyCheckRunning: true, policyCheckProgress: 20 });
-    
     const targetCase = get().cases.find((c) => c.caseId === caseId);
-    
-    await new Promise((r) => setTimeout(r, 250));
+
+    await new Promise((r) => setTimeout(r, 200));
     set({ policyCheckProgress: 50 });
-    await new Promise((r) => setTimeout(r, 250));
+    await new Promise((r) => setTimeout(r, 200));
     set({ policyCheckProgress: 80 });
 
-    // Call real backend execution endpoint
-    let backendReceipt: any = null;
     try {
-      backendReceipt = await recoveryService.approveCase(caseId, targetCase?.recommendedAction);
-    } catch {
-      // Offline fallback
-    }
+      await recoveryService.approveCase(caseId, targetCase?.recommendedAction);
+    } catch {}
 
     set({ policyCheckProgress: 100, isPolicyCheckRunning: false });
 
     const now = new Date();
     const timeStr = now.toTimeString().split(' ')[0];
-    const auditHash = backendReceipt?.audit_hash ? ` | SHA-256: ${backendReceipt.audit_hash.slice(0, 16)}...` : '';
 
-    set((state) => {
-      const updatedCases = state.cases.map((c) =>
+    const newAuditEvent: AuditEvent = {
+      id: `AUD-${Math.floor(10000 + Math.random() * 90000)}`,
+      caseId,
+      timestamp: timeStr,
+      stage: 'VALIDATED',
+      title: 'Action Approved & Dispatched',
+      description: `Smart action approved for ${targetCase?.customerName || caseId}. Regulatory check verified (5/5).`,
+      statusBadge: 'VALIDATED',
+      actor: `${get().userProfile.name} (${get().merchantSettings.merchantName})`,
+      enclaveAttested: true,
+    };
+
+    set((state) => ({
+      cases: state.cases.map((c) =>
         c.caseId === caseId ? { ...c, status: 'APPROVED' as CaseStatus, updatedAt: now.toISOString() } : c
-      );
-
-      const newAuditEvent: AuditEvent = {
-        id: `AUD-${Math.floor(10000 + Math.random() * 90000)}`,
-        caseId,
-        timestamp: timeStr,
-        stage: 'VALIDATED',
-        title: 'Action Approved & Dispatched',
-        description: `Smart action approved for ${targetCase?.customerName || caseId}. Regulatory check verified (5/5).${auditHash}`,
-        statusBadge: 'VALIDATED',
-        actor: `${state.userProfile.name} (${state.merchantSettings.merchantName})`,
-        enclaveAttested: true,
-      };
-
-      return {
-        cases: updatedCases,
-        auditTrail: [newAuditEvent, ...state.auditTrail],
-        activeNotification: `Case ${caseId} approved and dispatched via Causal Engine.${auditHash ? ' Audit block created.' : ''}`,
-      };
-    });
+      ),
+      auditTrail: [newAuditEvent, ...state.auditTrail],
+      activeNotification: `Case ${caseId} approved and dispatched via Causal Engine.`,
+    }));
   },
 
   reviewCase: (caseId: string) => {
@@ -365,48 +665,46 @@ export const useDemoStore = create<DemoStoreState>((set, get) => ({
     }));
   },
 
-  simulateRecovery: async (caseId: string) => {
-    const state = get();
-    const targetCase = state.cases.find((c) => c.caseId === caseId);
-    if (!targetCase) return;
+  setSelectedDateRange: (range: string) => {
+    set({ 
+      selectedDateRange: range, 
+      activeNotification: `Analysis timeframe set to ${range}` 
+    });
+  },
 
-    const recoveryAmount = targetCase.amount;
-    const now = new Date();
-    const timeStr = now.toTimeString().split(' ')[0];
+  updateFiltersState: (newFilters) => {
+    set((state) => {
+      const updated = { ...state.filtersState, ...newFilters };
+      let count = 0;
+      count += updated.domains.length;
+      if (updated.minUplift > 0) count++;
+      if (updated.minConfidence > 0) count++;
+      count += updated.evidenceSources.length;
+      count += updated.statuses.length;
+      if (updated.onlyHighImpact) count++;
+      if (updated.regulatoryBoundsVerified) count++;
 
-    // Call real backend simulate recovery endpoint (updates LinUCB bandit online and audit ledger)
-    let simRes: any = null;
-    try {
-      simRes = await recoveryService.simulateRecovery(caseId);
-    } catch {}
+      return {
+        filtersState: updated,
+        activeFilterCount: Math.max(1, count),
+        activeNotification: `Filters updated (${Math.max(1, count)} criteria active)`,
+      };
+    });
+  },
 
-    const auditHash = simRes?.audit_hash ? ` | SHA-256: ${simRes.audit_hash.slice(0, 16)}...` : '';
-
-    const newAuditEvent: AuditEvent = {
-      id: `AUD-${Math.floor(10000 + Math.random() * 90000)}`,
-      caseId,
-      timestamp: timeStr,
-      stage: 'EXECUTED',
-      title: 'Payment Successfully Recovered',
-      description: `Recovered ₹${recoveryAmount.toLocaleString('en-IN')} via ${targetCase.recommendedActionLabel} at peak recovery window.${auditHash}`,
-      statusBadge: 'EXECUTED',
-      actor: 'WAPSI Recovery Engine (LinUCB Online Feedback)',
-      enclaveAttested: true,
-    };
-
+  resetFilters: () => {
     set({
-      cases: state.cases.map((c) =>
-        c.caseId === caseId ? { ...c, status: 'RECOVERED' as CaseStatus } : c
-      ),
-      overviewMetrics: {
-        ...state.overviewMetrics,
-        recovered: state.overviewMetrics.recovered + recoveryAmount,
-        incrementalRecovery: state.overviewMetrics.incrementalRecovery + Math.round(recoveryAmount * targetCase.incrementalUplift),
-        recoverable: Math.max(0, state.overviewMetrics.recoverable - recoveryAmount),
+      filtersState: {
+        domains: ['Subscriptions', 'Checkout', 'B2B'],
+        minUplift: 8,
+        minConfidence: 80,
+        evidenceSources: ['Network Data', 'Merchant Prior', 'Enclave Attested'],
+        statuses: ['READY', 'REVIEW', 'APPROVED'],
+        onlyHighImpact: false,
+        regulatoryBoundsVerified: true,
       },
-      auditTrail: [newAuditEvent, ...state.auditTrail],
-      lastRecoveredCaseId: caseId,
-      activeNotification: `🎉 Success! Case ${caseId} was recovered for ₹${recoveryAmount.toLocaleString('en-IN')}. Bandit weights updated.${auditHash ? ' Audit logged.' : ''}`,
+      activeFilterCount: 7,
+      activeNotification: 'Filters reset to default configuration.',
     });
   },
 

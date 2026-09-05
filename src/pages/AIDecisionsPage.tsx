@@ -29,8 +29,10 @@ import {
   Sparkles,
   HelpCircle,
   ShieldCheck,
-  Check
+  Check,
+  AlertTriangle
 } from 'lucide-react';
+import { Button } from '../components/ui/Button';
 import { CyberBrainIcon } from '../components/shared/CyberBrainIcon';
 import { formatINR, formatPercent } from '../lib/formatting';
 import { cn } from '../lib/utils';
@@ -38,6 +40,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useDemoStore } from '../store/demoStore';
 import { useModelHealth, useDecisionsOverview } from '../hooks/useAIDecisions';
 import { useRecoveryCases } from '../hooks/useRecovery';
+import { getHeroTransaction, makeRecoveryDecision } from '../services/causalEngine';
 
 interface TreatmentOption {
   id: string;
@@ -58,11 +61,24 @@ export const AIDecisionsPage: React.FC = () => {
 
   const approveCase = useDemoStore((state) => state.approveCase);
   const storeCases = useDemoStore((state) => state.cases);
+  const driftReport = useDemoStore((state) => state.driftReport);
+  const setDriftLevel = useDemoStore((state) => state.setDriftLevel);
+  const engineState = useDemoStore((state) => state.engineState);
+  const rawTransactions = useDemoStore((state) => state.rawTransactions);
+  const caseDetails = useDemoStore((state) => state.caseDetails);
+  const overviewMetrics = useDemoStore((state) => state.overviewMetrics);
+  const openCounterfactualModal = useDemoStore((state) => state.openCounterfactualModal);
+
   const { data: liveCases } = useRecoveryCases();
   const queueCases = (liveCases && liveCases.length > 0) ? liveCases : storeCases;
 
   const { data: modelHealth } = useModelHealth();
   const { data: decisionsOverview } = useDecisionsOverview();
+
+  // Hero case decision
+  const heroCase = storeCases.find(c => c.amount === 8999) || storeCases[0];
+  const heroTx = rawTransactions[heroCase?.caseId || ''] || getHeroTransaction();
+  const heroDecision = caseDetails[heroCase?.caseId || ''] || makeRecoveryDecision(heroTx, engineState);
 
   const [activeTab, setActiveTab] = useState('uplift');
   const [selectedTreatment, setSelectedTreatment] = useState<string>('WhatsApp');
@@ -80,14 +96,54 @@ export const AIDecisionsPage: React.FC = () => {
     { id: 'health', label: 'Model Health', tooltip: 'AUUC, Qini, Conformal Coverage (95.1%) and drift monitoring' },
   ];
 
-  // Baseline probability & metrics based on comparison selection
-  const baselineProb = comparisonBaseline === 'No Action' ? 48 : 56;
-  const avgUplift = comparisonBaseline === 'No Action' ? '+22.6%' : '+14.8%';
+  // Baseline probability & metrics based on comparison selection derived directly from engine
+  const baselineProb = comparisonBaseline === 'No Action' 
+    ? Math.round(heroDecision.naturalRecoveryProbability * 100) 
+    : Math.round(Math.min(95, (heroDecision.naturalRecoveryProbability + 0.08) * 100));
+
+  const avgUplift = comparisonBaseline === 'No Action' 
+    ? `+${Math.round(heroDecision.incrementalUplift * 100)}%` 
+    : `+${Math.max(0, Math.round((heroDecision.incrementalUplift - 0.08) * 100))}%`;
   const avgUpliftSubtext = comparisonBaseline === 'No Action' ? '+12.4% vs counterfactual' : 'Net lift over legacy rules';
-  const incRecoveryEst = comparisonBaseline === 'No Action' ? '₹2.14L' : '₹1.42L';
+  const incRecoveryEst = overviewMetrics?.incrementalRecovery ? formatINR(overviewMetrics.incrementalRecovery) : '₹2.14L';
   const incRecoverySubtext = comparisonBaseline === 'No Action' ? '+37.6% vs baseline' : '+₹1.42L above rule heuristics';
 
-  // Dynamic Treatments matching baseline comparison mode
+  // Dynamic Treatments matching baseline comparison mode, built directly from heroDecision.actionScores
+  const actionMeta: Record<string, { id: string; name: string; color: string; hoverBg: string; icon: React.ComponentType<{ className?: string }>; iconColor: string }> = {
+    RETRY: { 
+      id: 'Retry', 
+      name: 'Retry', 
+      color: '#3B82F6', 
+      hoverBg: 'rgba(59, 130, 246, 0.15)', 
+      icon: RefreshCw, 
+      iconColor: 'text-blue-500' 
+    },
+    WHATSAPP: { 
+      id: 'WhatsApp', 
+      name: 'WhatsApp', 
+      color: '#10B981', 
+      hoverBg: 'rgba(16, 185, 129, 0.15)', 
+      icon: MessageSquare, 
+      iconColor: 'text-emerald-500' 
+    },
+    VOICE: { 
+      id: 'Voice Call', 
+      name: 'Voice Call', 
+      color: '#8B5CF6', 
+      hoverBg: 'rgba(139, 92, 246, 0.15)', 
+      icon: PhoneCall, 
+      iconColor: 'text-purple-500' 
+    },
+    INCENTIVE: { 
+      id: 'Incentive Link', 
+      name: 'Incentive Link', 
+      color: '#F59E0B', 
+      hoverBg: 'rgba(245, 158, 11, 0.15)', 
+      icon: Gift, 
+      iconColor: 'text-amber-500' 
+    },
+  };
+
   const treatments: TreatmentOption[] = [
     { 
       id: 'Baseline', 
@@ -96,68 +152,47 @@ export const AIDecisionsPage: React.FC = () => {
       uplift: 0, 
       upliftLabel: 'Baseline', 
       color: '#64748B', 
-      hoverBg: 'rgba(100, 116, 139, 0.15)',
+      hoverBg: 'rgba(100, 116, 139, 0.15)', 
       icon: comparisonBaseline === 'No Action' ? Ban : ShieldCheck, 
-      iconColor: 'text-slate-400',
+      iconColor: 'text-slate-400', 
       isBaseline: true 
     },
-    { 
-      id: 'Retry', 
-      name: 'Retry', 
-      prob: 61, 
-      uplift: 61 - baselineProb, 
-      upliftLabel: `+${61 - baselineProb}% uplift`, 
-      color: '#3B82F6', 
-      hoverBg: 'rgba(59, 130, 246, 0.15)',
-      icon: RefreshCw, 
-      iconColor: 'text-blue-500' 
-    },
-    { 
-      id: 'WhatsApp', 
-      name: 'WhatsApp', 
-      prob: 72, 
-      uplift: 72 - baselineProb, 
-      upliftLabel: `+${72 - baselineProb}% uplift`, 
-      color: '#10B981', 
-      hoverBg: 'rgba(16, 185, 129, 0.15)',
-      icon: MessageSquare, 
-      iconColor: 'text-emerald-500' 
-    },
-    { 
-      id: 'Voice Call', 
-      name: 'Voice Call', 
-      prob: 67, 
-      uplift: 67 - baselineProb, 
-      upliftLabel: `+${67 - baselineProb}% uplift`, 
-      color: '#8B5CF6', 
-      hoverBg: 'rgba(139, 92, 246, 0.15)',
-      icon: PhoneCall, 
-      iconColor: 'text-purple-500' 
-    },
-    { 
-      id: 'Incentive Link', 
-      name: 'Incentive Link', 
-      prob: 79, 
-      uplift: 79 - baselineProb, 
-      upliftLabel: `+${79 - baselineProb}% uplift`, 
-      color: '#F59E0B', 
-      hoverBg: 'rgba(245, 158, 11, 0.15)',
-      icon: Gift, 
-      iconColor: 'text-amber-500' 
-    },
+    ...(['RETRY', 'WHATSAPP', 'VOICE', 'INCENTIVE'] as const).map((key) => {
+      const score = (heroDecision.actionScores || []).find((s) => s.action === key);
+      const meta = actionMeta[key];
+      const prob = score ? Math.round(score.recoveryProbability * 100) : 70;
+      const upliftVal = Math.max(0, prob - baselineProb);
+      return {
+        id: meta.id,
+        name: meta.name,
+        prob,
+        uplift: upliftVal,
+        upliftLabel: `+${upliftVal}% uplift`,
+        color: meta.color,
+        hoverBg: meta.hoverBg,
+        icon: meta.icon,
+        iconColor: meta.iconColor,
+      };
+    }),
   ];
 
-  // Timing Intelligence Data
-  const timingPoints = [
-    { hour: '0h', prob: 22 },
-    { hour: '6h', prob: 50 },
-    { hour: '12h', prob: 62 },
-    { hour: '18h', prob: 72, isPeak: true },
-    { hour: '24h', prob: 66 },
-    { hour: '36h', prob: 58 },
-    { hour: '48h', prob: 38 },
-    { hour: '72h', prob: 18 },
-  ];
+  // Timing Intelligence Data directly connected to heroDecision.timing.curvePoints
+  const timingPoints = (heroDecision.timing?.curvePoints || []).length > 0
+    ? heroDecision.timing.curvePoints.map((cp) => ({
+        hour: `${cp.hour}h`,
+        prob: Math.round(cp.probability * 100),
+        isPeak: cp.hour === (heroDecision.timing?.recommendedHour ?? 10),
+      }))
+    : [
+        { hour: '0h', prob: 22 },
+        { hour: '6h', prob: 50 },
+        { hour: '12h', prob: 62 },
+        { hour: '18h', prob: 72, isPeak: true },
+        { hour: '24h', prob: 66 },
+        { hour: '36h', prob: 58 },
+        { hour: '48h', prob: 38 },
+        { hour: '72h', prob: 18 },
+      ];
 
   // Dynamic Segment impacts based on selected treatment & baseline
   const getSegmentImpacts = () => {
@@ -282,7 +317,7 @@ export const AIDecisionsPage: React.FC = () => {
             )}>
               {decisionsOverview?.backendOverview?.totalDecisions 
                 ? decisionsOverview.backendOverview.totalDecisions.toLocaleString('en-IN') 
-                : '8,421'}
+                : storeCases.length.toLocaleString('en-IN')}
             </span>
             <span className={cn("text-[9px] block", isLight ? "text-slate-500" : "text-slate-400")}>100% causal confidence</span>
           </div>
@@ -291,7 +326,9 @@ export const AIDecisionsPage: React.FC = () => {
             <span className={cn(
               "text-base font-extrabold tabular-nums",
               isLight ? "text-indigo-700 font-black" : "text-indigo-300"
-            )}>{incRecoveryEst}</span>
+            )}>
+              {overviewMetrics?.incrementalRecovery ? formatINR(overviewMetrics.incrementalRecovery) : incRecoveryEst}
+            </span>
             <span className={cn("text-[9px] block", isLight ? "text-slate-500" : "text-slate-400")}>{incRecoverySubtext}</span>
           </div>
         </div>
@@ -825,6 +862,191 @@ export const AIDecisionsPage: React.FC = () => {
                 </Card>
               </div>
             </div>
+
+            {/* Causal Decision Leaderboard — Multi-Treatment Optimization */}
+            <Card className={cn(
+              "p-4 sm:p-5 rounded-2xl space-y-4 border shadow-2xl transition-colors",
+              isLight ? "bg-white border-slate-200 text-slate-900 shadow-sm" : "bg-[#0B101D]/95 border-slate-800 text-white"
+            )}>
+              <div className={cn("flex flex-wrap items-center justify-between gap-3 border-b pb-3", isLight ? "border-slate-100" : "border-slate-800")}>
+                <div>
+                  <CardTitle className="text-sm font-bold flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-400" />
+                    <span>Causal Decision Leaderboard — Multi-Treatment Optimization</span>
+                    <span className={cn("text-xs font-mono font-normal", isLight ? "text-slate-500" : "text-slate-400")}>
+                      (Evaluated for Case {heroDecision.caseId} • {formatINR(heroTx.amount)})
+                    </span>
+                  </CardTitle>
+                  <p className={cn("text-[11px] mt-0.5", isLight ? "text-slate-500" : "text-slate-400")}>
+                    Comparing natural recovery baseline against 5 active treatments. WAPSI selects the action maximizing Expected Net Recovery Value, NOT raw recovery probability.
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className={cn(
+                    "text-xs font-bold gap-1.5 rounded-xl cursor-pointer shadow-sm",
+                    isLight ? "border-slate-300 bg-slate-50 text-slate-800 hover:bg-slate-100" : "border-slate-700 bg-slate-900 text-slate-200 hover:bg-slate-800"
+                  )}
+                  onClick={() => openCounterfactualModal(heroDecision.caseId)}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                  <span>Open What-If Simulator</span>
+                </Button>
+              </div>
+
+              <div className={cn("overflow-x-auto rounded-xl border", isLight ? "border-slate-200 bg-white" : "border-slate-800/80 bg-slate-950/50")}>
+                <table className="w-full text-left text-[11px] border-collapse">
+                  <thead>
+                    <tr className={cn(
+                      "border-b font-bold uppercase tracking-wider text-[10px]",
+                      isLight ? "bg-slate-50 border-slate-200 text-slate-500" : "border-slate-800 text-slate-400 bg-slate-900/90"
+                    )}>
+                      <th className="py-2.5 px-3">Treatment Action</th>
+                      <th className="py-2.5 px-3">P(Recovery)</th>
+                      <th className="py-2.5 px-3">Incremental Uplift (τ)</th>
+                      <th className="py-2.5 px-3">Gross Value</th>
+                      <th className="py-2.5 px-3">Intervention Cost</th>
+                      <th className="py-2.5 px-3">Expected Net Value</th>
+                      <th className="py-2.5 px-3">Confidence (90% Conformal)</th>
+                      <th className="py-2.5 px-3 text-right">Engine Verdict</th>
+                    </tr>
+                  </thead>
+                  <tbody className={cn("divide-y", isLight ? "divide-slate-100" : "divide-slate-800/60")}>
+                    {(heroDecision.actionScores || []).map((score) => {
+                      const isSelected = score.action === (heroDecision.recommendedAction || heroDecision.bestAction);
+                      const isBaseline = score.action === 'NO_ACTION';
+                      const grossVal = score.grossRecoveredValue ?? Math.round(score.recoveryProbability * heroTx.amount);
+                      const totalCost = score.totalCost ?? (score.interventionCost ?? 0);
+                      const netVal = score.expectedNetRecoveryValue ?? (grossVal - totalCost);
+                      const confInterval = score.confidence ? [Math.round((score.confidence - 0.05) * 100), Math.round((score.confidence + 0.04) * 100)] : [88, 96];
+
+                      return (
+                        <tr
+                          key={score.action}
+                          className={cn(
+                            "transition-colors",
+                            isSelected
+                              ? (isLight ? "bg-indigo-50/80 font-bold" : "bg-indigo-950/40 font-bold")
+                              : (isLight ? "hover:bg-slate-50" : "hover:bg-slate-900/40")
+                          )}
+                        >
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-2">
+                              <span className={cn(isSelected ? (isLight ? "text-indigo-950 font-black" : "text-indigo-300 font-black") : (isLight ? "text-slate-800" : "text-slate-300"))}>
+                                {score.label}
+                              </span>
+                              {isSelected && (
+                                <span className={cn(
+                                  "text-[9px] px-1.5 py-0.2 rounded font-mono font-bold border",
+                                  isLight ? "bg-indigo-100 text-indigo-800 border-indigo-300" : "bg-indigo-500/20 text-indigo-300 border-indigo-500/40"
+                                )}>
+                                  SELECTED
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className={cn("py-2.5 px-3 font-mono font-bold tabular-nums", isLight ? "text-slate-900" : "text-white")}>
+                            {Math.round(score.recoveryProbability * 100)}%
+                          </td>
+                          <td className="py-2.5 px-3 font-mono font-bold tabular-nums">
+                            {isBaseline ? (
+                              <span className="text-slate-500">—</span>
+                            ) : (
+                              <span className={isLight ? "text-emerald-700" : "text-emerald-400"}>
+                                +{Math.round(score.incrementalUplift * 100)}%
+                              </span>
+                            )}
+                          </td>
+                          <td className={cn("py-2.5 px-3 font-mono tabular-nums", isLight ? "text-slate-700" : "text-slate-300")}>
+                            {formatINR(grossVal)}
+                          </td>
+                          <td className={cn("py-2.5 px-3 font-mono tabular-nums", isLight ? "text-rose-700 font-semibold" : "text-rose-400 font-semibold")}>
+                            {totalCost > 0 ? `-${formatINR(totalCost)}` : '₹0'}
+                          </td>
+                          <td className={cn("py-2.5 px-3 font-mono font-black tabular-nums text-xs", isLight ? "text-emerald-700" : "text-emerald-400")}>
+                            {formatINR(netVal)}
+                          </td>
+                          <td className={cn("py-2.5 px-3 font-mono text-[10px]", isLight ? "text-slate-600" : "text-slate-400")}>
+                            {isBaseline ? 'Baseline Reference' : `${Math.round((score.confidence || 0.92) * 100)}% [${confInterval.join('-')}%]`}
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            {isSelected ? (
+                              <span className={cn(
+                                "px-2 py-0.5 rounded text-[10px] font-bold border inline-flex items-center gap-1",
+                                isLight ? "bg-emerald-100 text-emerald-800 border-emerald-300" : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
+                              )}>
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>Optimal Net Value</span>
+                              </span>
+                            ) : isBaseline ? (
+                              <span className={cn("text-[10px]", isLight ? "text-slate-500" : "text-slate-500")}>
+                                Counterfactual Ref
+                              </span>
+                            ) : (
+                              <span className={cn("text-[10px]", isLight ? "text-slate-500" : "text-slate-400")}>
+                                Suboptimal Net Value
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Why This Decision vs Why Not Alternatives Deep Dive */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                <div className={cn(
+                  "p-3.5 rounded-xl border space-y-2",
+                  isLight ? "bg-emerald-50/70 border-emerald-200" : "bg-emerald-950/20 border-emerald-500/30"
+                )}>
+                  <span className={cn("text-xs font-bold flex items-center gap-1.5", isLight ? "text-emerald-950" : "text-emerald-300")}>
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                    Why {heroDecision.recommendedActionLabel || heroDecision.bestActionLabel}? (Causal Rationale)
+                  </span>
+                  <ul className="space-y-1 text-[11px]">
+                    {(heroDecision.decisionReasons || [
+                      '+28.6% incremental causal uplift over organic holdout rate (48%).',
+                      'Expected Net Recovery Value of ₹6,880 is highest among all compliant actions.',
+                      'Action cost (₹6.00) preserves 99.9% of recovered value.',
+                      'All 5 policy governance and regulatory constraints passed.'
+                    ]).map((reason, idx) => (
+                      <li key={idx} className="flex items-start gap-1.5">
+                        <span className="text-emerald-500 font-bold">•</span>
+                        <span className={isLight ? "text-slate-800" : "text-slate-200"}>{reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className={cn(
+                  "p-3.5 rounded-xl border space-y-2",
+                  isLight ? "bg-amber-50/70 border-amber-200" : "bg-amber-950/20 border-amber-500/30"
+                )}>
+                  <span className={cn("text-xs font-bold flex items-center gap-1.5", isLight ? "text-amber-950" : "text-amber-300")}>
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                    Why Not The Alternatives? (Economic Disqualification)
+                  </span>
+                  <ul className="space-y-1 text-[11px]">
+                    {(heroDecision.rejectedAlternatives || [
+                      { reason: 'Incentive Offer: Achieves 87.7% raw recovery but ₹1,605 discount cost erodes net recovery value down to ₹6,289 (₹591 worse than WhatsApp).' },
+                      { reason: 'IVR Voice Call: High recovery (78.9%) but telephone fees & fatigue penalty reduce net value to ₹6,406.' },
+                      { reason: 'Smart Retry: Zero direct fees but produces lower recovery (71.5%, net ₹6,434) due to unresolved customer-side issue.' }
+                    ]).map((alt, idx) => {
+                      const text = typeof alt === 'string' ? alt : alt.reason;
+                      return (
+                        <li key={idx} className="flex items-start gap-1.5">
+                          <span className="text-amber-500 font-bold">•</span>
+                          <span className={isLight ? "text-slate-800" : "text-slate-200"}>{text}</span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              </div>
+            </Card>
           </motion.div>
         )}
 
@@ -1161,11 +1383,135 @@ export const AIDecisionsPage: React.FC = () => {
               </div>
 
               <div className="lg:col-span-5 space-y-4">
-                <Card className={cn("p-4 sm:p-5 rounded-2xl border shadow-2xl space-y-3 transition-colors", isLight ? "bg-white border-slate-200 text-slate-900 shadow-sm" : "bg-[#0B101D]/95 border-slate-800 text-white")}>
-                  <CardTitle className={cn("text-sm font-bold", isLight ? "text-slate-900" : "text-white")}>Covariate Drift & Guardrails</CardTitle>
+                <Card className={cn("p-4 sm:p-5 rounded-2xl border shadow-2xl space-y-3.5 transition-colors", isLight ? "bg-white border-slate-200 text-slate-900 shadow-sm" : "bg-[#0B101D]/95 border-slate-800 text-white")}>
+                  <div className="flex items-center justify-between border-b pb-2.5">
+                    <div>
+                      <CardTitle className="text-sm font-bold flex items-center gap-2">
+                        <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                        <span>Covariate Drift Monitor</span>
+                      </CardTitle>
+                      <span className="text-[10px] text-slate-400">
+                        Population Stability Index (PSI) Testing
+                      </span>
+                    </div>
+                    {(() => {
+                      const currentDriftStatus = driftReport.status || driftReport.overallStatus;
+                      return (
+                        <span className={cn(
+                          "px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold border",
+                          currentDriftStatus === 'STABLE'
+                            ? (isLight ? "bg-emerald-50 text-emerald-800 border-emerald-300" : "bg-emerald-500/20 text-emerald-300 border-emerald-500/40")
+                            : currentDriftStatus === 'WARNING'
+                            ? (isLight ? "bg-amber-50 text-amber-800 border-amber-300" : "bg-amber-500/20 text-amber-300 border-amber-500/40")
+                            : (isLight ? "bg-rose-50 text-rose-800 border-rose-300" : "bg-rose-500/20 text-rose-300 border-rose-500/40")
+                        )}>
+                          {currentDriftStatus} (PSI {driftReport.psi})
+                        </span>
+                      );
+                    })()}
+                  </div>
+
                   <p className={cn("text-xs leading-relaxed", isLight ? "text-slate-600" : "text-slate-300")}>
-                    Continuous Kolmogorov-Smirnov drift monitoring runs on incoming transaction features to detect sudden distribution shifts (e.g. holiday sales spikes).
+                    Continuous two-sample Kolmogorov-Smirnov and PSI monitoring on incoming features. When <strong>CRITICAL</strong> drift is triggered, autonomous routing is halted and transactions escalate to Human Review.
                   </p>
+
+                  {/* Interactive Drift Test Buttons */}
+                  <div className="space-y-1.5 pt-1">
+                    <span className={cn("text-[11px] font-bold block", isLight ? "text-slate-700" : "text-slate-300")}>
+                      Simulate Production Feature Shift:
+                    </span>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {(() => {
+                        const currentDriftStatus = driftReport.status || driftReport.overallStatus;
+                        return (
+                          <>
+                            <button
+                              onClick={() => setDriftLevel('STABLE')}
+                              className={cn(
+                                "px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer text-center",
+                                currentDriftStatus === 'STABLE'
+                                  ? "bg-emerald-600 text-white border-emerald-500 shadow-sm"
+                                  : isLight ? "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200" : "bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800"
+                              )}
+                            >
+                              Stable (0.04)
+                            </button>
+                            <button
+                              onClick={() => setDriftLevel('WARNING')}
+                              className={cn(
+                                "px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer text-center",
+                                currentDriftStatus === 'WARNING'
+                                  ? "bg-amber-600 text-white border-amber-500 shadow-sm"
+                                  : isLight ? "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200" : "bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800"
+                              )}
+                            >
+                              Warning (0.14)
+                            </button>
+                            <button
+                              onClick={() => setDriftLevel('CRITICAL')}
+                              className={cn(
+                                "px-2 py-1.5 rounded-lg text-[10px] font-bold border transition-all cursor-pointer text-center",
+                                currentDriftStatus === 'CRITICAL'
+                                  ? "bg-rose-600 text-white border-rose-500 shadow-sm"
+                                  : isLight ? "bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200" : "bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800"
+                              )}
+                            >
+                              Critical (0.28)
+                            </button>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  </div>
+
+                  {/* Feature Breakdown */}
+                  <div className="space-y-1.5 pt-1">
+                    <span className={cn("text-[10px] font-bold uppercase tracking-wider block", isLight ? "text-slate-500" : "text-slate-400")}>
+                      Feature Stability Metrics
+                    </span>
+                    <div className="space-y-1 text-[11px]">
+                      {Object.entries(driftReport.features || {
+                        'Transaction Amount': { psi: 0.021, status: 'STABLE' as const },
+                        'Prior Retry Count': { psi: 0.014, status: 'STABLE' as const },
+                        'Attempt Hour (IST)': { psi: 0.018, status: 'STABLE' as const },
+                        'Payment Method Type': { psi: 0.032, status: 'STABLE' as const },
+                      }).map(([feat, data]) => {
+                        const featureData = data as { psi: number; status: 'STABLE' | 'WARNING' | 'CRITICAL' };
+                        return (
+                          <div key={feat} className={cn(
+                            "p-2 rounded-lg border flex items-center justify-between",
+                            isLight ? "bg-slate-50 border-slate-200" : "bg-slate-950/60 border-slate-800"
+                          )}>
+                            <span className={cn("font-mono text-[10px]", isLight ? "text-slate-700" : "text-slate-300")}>{feat}</span>
+                            <div className="flex items-center gap-2">
+                              <span className={cn("font-mono font-bold text-[10px] tabular-nums", isLight ? "text-slate-800" : "text-slate-200")}>
+                                PSI {featureData.psi.toFixed(3)}
+                              </span>
+                              <span className={cn(
+                                "text-[9px] px-1.5 py-0.2 rounded font-bold uppercase border",
+                                featureData.status === 'STABLE' 
+                                  ? (isLight ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "text-emerald-300 bg-emerald-500/10 border-emerald-500/20")
+                                  : featureData.status === 'WARNING'
+                                  ? (isLight ? "bg-amber-50 text-amber-800 border-amber-200" : "text-amber-300 bg-amber-500/10 border-amber-500/20")
+                                  : (isLight ? "bg-rose-50 text-rose-800 border-rose-200" : "text-rose-300 bg-rose-500/10 border-rose-500/20")
+                              )}>
+                                {featureData.status}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className={cn(
+                    "p-3 rounded-xl border text-[11px] leading-relaxed",
+                    (driftReport.status || driftReport.overallStatus) === 'CRITICAL'
+                      ? (isLight ? "bg-rose-50 border-rose-200 text-rose-900" : "bg-rose-950/40 border-rose-500/40 text-rose-200")
+                      : (isLight ? "bg-slate-50 border-slate-200 text-slate-700" : "bg-slate-900/60 border-slate-800 text-slate-300")
+                  )}>
+                    <strong>Enforced Action:</strong> {driftReport.actionTaken || driftReport.impactOnRouting}
+                  </div>
                 </Card>
               </div>
             </div>

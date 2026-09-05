@@ -18,8 +18,10 @@ import {
   Zap,
   Activity,
   CreditCard,
-  Check
+  Check,
+  SlidersHorizontal
 } from 'lucide-react';
+import { formatINR } from '../lib/formatting';
 import { cn } from '../lib/utils';
 import { motion } from 'framer-motion';
 import { useDemoStore } from '../store/demoStore';
@@ -355,6 +357,9 @@ export const GovernancePage: React.FC = () => {
   const globalDateRange = useDemoStore((state) => state.selectedDateRange);
   const setSelectedDateRange = useDemoStore((state) => state.setSelectedDateRange);
   const auditTrail = useDemoStore((state) => state.auditTrail);
+  const engineState = useDemoStore((state) => state.engineState);
+  const updatePolicyRule = useDemoStore((state) => state.updatePolicyRule);
+  const policyCounts = useDemoStore((state) => state.policyCounts);
   const { data: govData } = useGovernance();
 
   useEffect(() => {
@@ -629,6 +634,135 @@ export const GovernancePage: React.FC = () => {
         </motion.div>
       ) : (
         <>
+          {/* Live Interactive Policy Calibration & Routing Impact */}
+          <Card className={cn(
+            "p-4 sm:p-5 rounded-2xl border shadow-2xl space-y-4 mb-4 transition-colors",
+            isLight ? "bg-white border-slate-200 text-slate-900 shadow-sm" : "bg-[#0B101D]/95 border-slate-800 text-white"
+          )}>
+            <div className={cn("flex flex-wrap items-center justify-between gap-3 border-b pb-3", isLight ? "border-slate-100" : "border-slate-800")}>
+              <div>
+                <CardTitle className="text-sm font-bold flex items-center gap-2">
+                  <SlidersHorizontal className="w-4 h-4 text-purple-400" />
+                  <span>Live Policy Bounds Engine & Real-Time Human Routing</span>
+                </CardTitle>
+                <p className={cn("text-[11px] mt-0.5", isLight ? "text-slate-500" : "text-slate-400")}>
+                  Adjust thresholds to re-evaluate the full portfolio of 350 transactions through the Causal Policy Engine in real time.
+                </p>
+              </div>
+
+              {/* Live Portfolio Impact Counters */}
+              <div className="flex items-center gap-3">
+                <div className={cn("px-3 py-1 rounded-xl border text-center", isLight ? "bg-emerald-50 border-emerald-200" : "bg-emerald-950/40 border-emerald-500/40")}>
+                  <span className="text-[9px] uppercase font-bold text-emerald-400 block">PASS (Autonomous)</span>
+                  <span className={cn("text-sm font-black tabular-nums", isLight ? "text-emerald-800" : "text-emerald-300")}>{policyCounts.pass}</span>
+                </div>
+                <div className={cn("px-3 py-1 rounded-xl border text-center", isLight ? "bg-amber-50 border-amber-200" : "bg-amber-950/40 border-amber-500/40")}>
+                  <span className="text-[9px] uppercase font-bold text-amber-400 block">HUMAN REVIEW</span>
+                  <span className={cn("text-sm font-black tabular-nums", isLight ? "text-amber-800" : "text-amber-300")}>{policyCounts.review}</span>
+                </div>
+                <div className={cn("px-3 py-1 rounded-xl border text-center", isLight ? "bg-rose-50 border-rose-200" : "bg-rose-950/40 border-rose-500/40")}>
+                  <span className="text-[9px] uppercase font-bold text-rose-400 block">BLOCKED</span>
+                  <span className={cn("text-sm font-black tabular-nums", isLight ? "text-rose-800" : "text-rose-300")}>{policyCounts.block}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 4 Interactive Sliders */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-1">
+              {/* Slider 1: Confidence Threshold */}
+              <div className={cn("p-3 rounded-xl border space-y-2", isLight ? "bg-slate-50 border-slate-200" : "bg-slate-900/60 border-slate-800")}>
+                <div className="flex justify-between items-center text-xs">
+                  <span className={cn("font-bold", isLight ? "text-slate-800" : "text-slate-200")}>Min Confidence</span>
+                  <span className="font-mono font-black text-purple-400 tabular-nums">
+                    {Math.round(engineState.policyRules.confidenceThreshold * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="70"
+                  max="95"
+                  step="1"
+                  value={Math.round(engineState.policyRules.confidenceThreshold * 100)}
+                  onChange={(e) => updatePolicyRule('confidenceThreshold', Number(e.target.value) / 100)}
+                  className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                />
+                <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                  <span>70% (Aggressive)</span>
+                  <span>95% (Strict)</span>
+                </div>
+              </div>
+
+              {/* Slider 2: TRAI Contact Budget */}
+              <div className={cn("p-3 rounded-xl border space-y-2", isLight ? "bg-slate-50 border-slate-200" : "bg-slate-900/60 border-slate-800")}>
+                <div className="flex justify-between items-center text-xs">
+                  <span className={cn("font-bold", isLight ? "text-slate-800" : "text-slate-200")}>TRAI Contact Cap</span>
+                  <span className="font-mono font-black text-blue-400 tabular-nums">
+                    {engineState.policyRules.maxContactsPerCustomer} contacts
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  step="1"
+                  value={engineState.policyRules.maxContactsPerCustomer}
+                  onChange={(e) => updatePolicyRule('maxContactsPerCustomer', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                />
+                <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                  <span>1 (Strict)</span>
+                  <span>5 (Max)</span>
+                </div>
+              </div>
+
+              {/* Slider 3: NPCI Retries */}
+              <div className={cn("p-3 rounded-xl border space-y-2", isLight ? "bg-slate-50 border-slate-200" : "bg-slate-900/60 border-slate-800")}>
+                <div className="flex justify-between items-center text-xs">
+                  <span className={cn("font-bold", isLight ? "text-slate-800" : "text-slate-200")}>NPCI Retries Limit</span>
+                  <span className="font-mono font-black text-emerald-400 tabular-nums">
+                    {engineState.policyRules.maxRetries} retries
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  step="1"
+                  value={engineState.policyRules.maxRetries}
+                  onChange={(e) => updatePolicyRule('maxRetries', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                />
+                <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                  <span>1 (Low)</span>
+                  <span>5 (High)</span>
+                </div>
+              </div>
+
+              {/* Slider 4: High Value Escalation */}
+              <div className={cn("p-3 rounded-xl border space-y-2", isLight ? "bg-slate-50 border-slate-200" : "bg-slate-900/60 border-slate-800")}>
+                <div className="flex justify-between items-center text-xs">
+                  <span className={cn("font-bold", isLight ? "text-slate-800" : "text-slate-200")}>High-Value Floor</span>
+                  <span className="font-mono font-black text-amber-400 tabular-nums">
+                    {formatINR(engineState.policyRules.highValueThreshold)}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min="5000"
+                  max="25000"
+                  step="1000"
+                  value={engineState.policyRules.highValueThreshold}
+                  onChange={(e) => updatePolicyRule('highValueThreshold', Number(e.target.value))}
+                  className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                />
+                <div className="flex justify-between text-[9px] text-slate-500 font-mono">
+                  <span>₹5,000</span>
+                  <span>₹25,000</span>
+                </div>
+              </div>
+            </div>
+          </Card>
+
           {/* Row 2: Policy Controls Overview (8 cols) & Policy Health (4 cols) - Balanced Compact Height */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
             {/* Policy Controls Overview Matrix with Scrollable Container (8 cols) */}
